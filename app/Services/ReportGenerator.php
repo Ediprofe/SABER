@@ -85,6 +85,40 @@ class ReportGenerator
             'generatedAt' => now()->format('Y-m-d H:i:s'),
         ];
 
+        // Add detailed analysis data for all areas
+        $detailAnalysis = [];
+        $areas = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'];
+        $areaLabels = [
+            'lectura' => 'Lectura Crítica',
+            'matematicas' => 'Matemáticas',
+            'sociales' => 'Ciencias Sociales',
+            'naturales' => 'Ciencias Naturales',
+            'ingles' => 'Inglés',
+        ];
+
+        foreach ($areas as $area) {
+            if ($exam->hasDetailConfig($area)) {
+                $detailStatistics = $this->metricsService->getDetailStatistics($exam, $area, $filters);
+                $detailPiarComparison = $this->metricsService->getDetailPiarComparison($exam, $area, $filters);
+                $detailGroupComparison = $this->metricsService->getDetailGroupComparison($exam, $area, $filters);
+
+                $detailAnalysis[$area] = [
+                    'hasConfig' => true,
+                    'config' => $exam->getDetailConfig($area),
+                    'statistics' => $detailStatistics,
+                    'piarComparison' => $detailPiarComparison,
+                    'groupComparison' => $detailGroupComparison,
+                ];
+            } else {
+                $detailAnalysis[$area] = [
+                    'hasConfig' => false,
+                    'area_label' => $areaLabels[$area] ?? ucfirst($area),
+                ];
+            }
+        }
+
+        $reportData['detailAnalysis'] = $detailAnalysis;
+
         // Render the view
         $html = View::make('reports.exam', $reportData)->render();
 

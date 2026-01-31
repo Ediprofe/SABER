@@ -6,13 +6,17 @@ use App\Exports\ResultsTemplateExport;
 use App\Filament\Resources\ExamResource\Pages;
 use App\Imports\ResultsImport;
 use App\Models\Exam;
+use App\Models\ExamAreaConfig;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ExamResource extends Resource
 {
@@ -101,6 +105,123 @@ class ExamResource extends Resource
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
+                Tables\Actions\Action::make('configure_areas')
+                    ->label('Configurar Análisis Detallado')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->color('secondary')
+                    ->modalHeading('Configurar Análisis Detallado')
+                    ->modalSubmitActionLabel('Guardar Configuración')
+                    ->mountUsing(function (Forms\ComponentContainer $form, Exam $record) {
+                        $areas = ['naturales', 'matematicas', 'sociales', 'lectura', 'ingles'];
+                        $formData = [];
+
+                        foreach ($areas as $area) {
+                            $config = $record->getDetailConfig($area);
+
+                            if ($config) {
+                                $formData[$area] = [
+                                    'enabled' => true,
+                                    'dimension1_name' => $config->dimension1_name,
+                                    'dimension1_items' => $config->itemsDimension1->map(fn ($item) => [
+                                        'name' => $item->name,
+                                    ])->toArray(),
+                                ];
+
+                                if ($area !== 'ingles' && $config->hasDimension2()) {
+                                    $formData[$area]['dimension2_name'] = $config->dimension2_name;
+                                    $formData[$area]['dimension2_items'] = $config->itemsDimension2->map(fn ($item) => [
+                                        'name' => $item->name,
+                                    ])->toArray();
+                                }
+                            } else {
+                                // Set defaults for non-configured areas
+                                $formData[$area] = [
+                                    'enabled' => false,
+                                ];
+                            }
+                        }
+
+                        $form->fill($formData);
+                    })
+                    ->form([
+                        Forms\Components\Tabs::make('areas')
+                            ->tabs([
+                                self::getAreaTab('naturales', 'Ciencias Naturales'),
+                                self::getAreaTab('matematicas', 'Matemáticas'),
+                                self::getAreaTab('sociales', 'Ciencias Sociales'),
+                                self::getAreaTab('lectura', 'Lectura Crítica'),
+                                self::getAreaTab('ingles', 'Inglés'),
+                            ]),
+                    ])
+                    ->action(function (Exam $record, array $data) {
+                        DB::transaction(function () use ($record, $data) {
+                            $areas = ['naturales', 'matematicas', 'sociales', 'lectura', 'ingles'];
+
+                            foreach ($areas as $area) {
+                                $areaData = $data[$area] ?? [];
+                                $enabled = $areaData['enabled'] ?? false;
+
+                                // Find existing config
+                                $existingConfig = $record->getDetailConfig($area);
+
+                                if (! $enabled) {
+                                    if ($existingConfig) {
+                                        $existingConfig->delete();
+                                    }
+
+                                    continue;
+                                }
+
+                                // Create or update config
+                                $config = $existingConfig ?? new ExamAreaConfig([
+                                    'exam_id' => $record->id,
+                                    'area' => $area,
+                                ]);
+
+                                $config->dimension1_name = $areaData['dimension1_name'] ?? 'Competencias';
+                                if ($area !== 'ingles') {
+                                    $config->dimension2_name = $areaData['dimension2_name'] ?? 'Componentes';
+                                } else {
+                                    $config->dimension2_name = null;
+                                }
+                                $config->save();
+
+                                // Remove existing items
+                                $config->items()->delete();
+
+                                // Add dimension 1 items
+                                $dim1Items = $areaData['dimension1_items'] ?? [];
+                                foreach ($dim1Items as $index => $item) {
+                                    if (! empty($item['name'])) {
+                                        $config->items()->create([
+                                            'dimension' => 1,
+                                            'name' => $item['name'],
+                                            'order' => $index,
+                                        ]);
+                                    }
+                                }
+
+                                // Add dimension 2 items (except ingles)
+                                if ($area !== 'ingles') {
+                                    $dim2Items = $areaData['dimension2_items'] ?? [];
+                                    foreach ($dim2Items as $index => $item) {
+                                        if (! empty($item['name'])) {
+                                            $config->items()->create([
+                                                'dimension' => 2,
+                                                'name' => $item['name'],
+                                                'order' => $index,
+                                            ]);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        Notification::make()
+                            ->title('Configuración guardada exitosamente')
+                            ->success()
+                            ->send();
+                    }),
                 Tables\Actions\Action::make('export_template')
                     ->label('Exportar Plantilla')
                     ->icon('heroicon-o-arrow-down-tray')
@@ -119,6 +240,26 @@ class ExamResource extends Resource
                             ->helperText('Deje en blanco para exportar todos los grupos'),
                     ])
                     ->action(function (Exam $record, array $data) {
+                        // Check if there are students enrolled in the academic year for the selected grade
+                        $yearId = $record->academic_year_id;
+                        $grade = $data['grade'];
+                        $year = $record->academicYear->year;
+
+                        $studentCount = \App\Models\Enrollment::where('academic_year_id', $yearId)
+                            ->where('grade', $grade)
+                            ->where('status', 'ACTIVE')
+                            ->count();
+
+                        if ($studentCount === 0) {
+                            Notification::make()
+                                ->title('No hay estudiantes matriculados')
+                                ->body("No hay estudiantes matriculados en el año {$year} para el grado {$grade}°. Por favor, registre estudiantes primero.")
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
                         $export = new ResultsTemplateExport(
                             $record,
                             $data['grade'],
@@ -137,24 +278,126 @@ class ExamResource extends Resource
                         Forms\Components\FileUpload::make('file')
                             ->label('Archivo Excel')
                             ->acceptedFileTypes(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'])
+                            ->disk('public')
+                            ->directory('imports')
+                            ->visibility('private')
                             ->required(),
                     ])
                     ->action(function (Exam $record, array $data): void {
                         try {
-                            $import = new ResultsImport($record);
-                            Excel::import($import, $data['file']);
+                            // Usar Storage para obtener el path correcto
+                            $filePath = \Illuminate\Support\Facades\Storage::disk('public')->path($data['file']);
 
-                            $warnings = $import->getWarnings();
+                            if (! file_exists($filePath)) {
+                                Notification::make()
+                                    ->title('Error en la importación')
+                                    ->body('No se pudo encontrar el archivo subido. Por favor, intente subir el archivo nuevamente.')
+                                    ->danger()
+                                    ->send();
 
-                            if (! empty($warnings)) {
+                                return;
+                            }
+
+                            // Use PhpSpreadsheet IOFactory to read multi-sheet Excel files
+                            $reader = IOFactory::createReaderForFile($filePath);
+                            $reader->setReadDataOnly(true);
+                            $spreadsheet = $reader->load($filePath);
+
+                            $totalImportedCount = 0;
+                            $allErrors = [];
+                            $allWarnings = [];
+                            $hasErrors = false;
+
+                            // Importar envuelto en transacción para permitir rollback en caso de errores
+                            DB::transaction(function () use ($spreadsheet, $record, &$totalImportedCount, &$allErrors, &$allWarnings, &$hasErrors) {
+                                $sheetCount = $spreadsheet->getSheetCount();
+
+                                for ($sheetIndex = 0; $sheetIndex < $sheetCount; $sheetIndex++) {
+                                    $sheet = $spreadsheet->getSheet($sheetIndex);
+                                    $sheetName = $sheet->getTitle();
+
+                                    // Get sheet data as array, starting from header row
+                                    $sheetData = $sheet->toArray(null, true, true, true);
+
+                                    // Skip empty sheets
+                                    if (count($sheetData) < 2) {
+                                        $allWarnings[] = "Hoja '{$sheetName}': La hoja está vacía o solo tiene encabezados. Se ignora.";
+
+                                        continue;
+                                    }
+
+                                    // Convert to collection (skip header row at index 1, start from index 2)
+                                    $rows = new Collection;
+                                    $headerRow = $sheetData[1];
+
+                                    for ($rowIndex = 2; $rowIndex <= count($sheetData); $rowIndex++) {
+                                        if (! isset($sheetData[$rowIndex])) {
+                                            continue;
+                                        }
+
+                                        $rowData = $sheetData[$rowIndex];
+                                        $row = [];
+
+                                        // Map column letters to header names
+                                        foreach ($headerRow as $col => $header) {
+                                            $headerKey = strtolower(trim($header));
+                                            $row[$headerKey] = $rowData[$col] ?? null;
+                                        }
+
+                                        // Skip empty rows (no code)
+                                        if (empty($row['codigo'] ?? $row['code'] ?? null)) {
+                                            continue;
+                                        }
+
+                                        $rows->push($row);
+                                    }
+
+                                    // Skip if no data rows
+                                    if ($rows->isEmpty()) {
+                                        $allWarnings[] = "Hoja '{$sheetName}': No se encontraron filas con datos. Se ignora.";
+
+                                        continue;
+                                    }
+
+                                    // Create import instance and process this sheet
+                                    $import = new ResultsImport($record);
+                                    $import->setSheetName($sheetName);
+                                    $import->collection($rows);
+
+                                    // Accumulate results
+                                    $totalImportedCount += $import->getImportedCount();
+                                    $allWarnings = array_merge($allWarnings, $import->getWarnings());
+
+                                    if ($import->hasErrors()) {
+                                        $hasErrors = true;
+                                        $sheetErrors = $import->getErrors();
+                                        $allErrors = array_merge($allErrors, $sheetErrors);
+                                    }
+                                }
+
+                                // If any sheet has errors, throw exception to trigger rollback
+                                if ($hasErrors) {
+                                    $errorMessage = "Error en la importación:\n";
+                                    foreach ($allErrors as $error) {
+                                        $errorMessage .= "- {$error}\n";
+                                    }
+                                    $errorMessage .= "\nNo se importó ningún registro. Corrija los errores e intente nuevamente.";
+
+                                    throw new \Exception($errorMessage);
+                                }
+                            });
+
+                            // Show success notification with totals
+                            if (! empty($allWarnings)) {
                                 Notification::make()
                                     ->title('Importación completada con advertencias')
-                                    ->body(implode("\n", $warnings))
+                                    ->body("Se importaron {$totalImportedCount} registros correctamente.\n\nAdvertencias:\n".implode("\n", $allWarnings))
                                     ->warning()
                                     ->send();
                             } else {
                                 Notification::make()
                                     ->title('Importación exitosa')
+                                    ->body("Se importaron {$totalImportedCount} registros correctamente desde todas las hojas.")
                                     ->success()
                                     ->send();
                             }
@@ -219,5 +462,61 @@ class ExamResource extends Resource
             'create' => Pages\CreateExam::route('/create'),
             'edit' => Pages\EditExam::route('/{record}/edit'),
         ];
+    }
+
+    private static function getAreaTab(string $area, string $label): Forms\Components\Tabs\Tab
+    {
+        $defaultDim1Name = match ($area) {
+            'ingles' => 'Partes',
+            default => 'Competencias',
+        };
+
+        $defaultDim2Name = match ($area) {
+            'lectura' => 'Tipos de Texto',
+            'matematicas', 'sociales', 'naturales' => 'Componentes',
+            'ingles' => null,
+            default => 'Componentes',
+        };
+
+        return Forms\Components\Tabs\Tab::make($label)
+            ->schema([
+                Forms\Components\Toggle::make("{$area}.enabled")
+                    ->label('Activar análisis detallado')
+                    ->live(),
+
+                Forms\Components\TextInput::make("{$area}.dimension1_name")
+                    ->label('Nombre Dimensión 1')
+                    ->default($defaultDim1Name)
+                    ->visible(fn (callable $get) => $get("{$area}.enabled")),
+
+                Forms\Components\Repeater::make("{$area}.dimension1_items")
+                    ->label('Items Dimensión 1')
+                    ->schema([
+                        Forms\Components\TextInput::make('name')
+                            ->label('Nombre')
+                            ->required(),
+                    ])
+                    ->addable()
+                    ->deletable()
+                    ->reorderable()
+                    ->visible(fn (callable $get) => $get("{$area}.enabled")),
+
+                Forms\Components\TextInput::make("{$area}.dimension2_name")
+                    ->label('Nombre Dimensión 2')
+                    ->default($defaultDim2Name)
+                    ->visible(fn (callable $get) => $get("{$area}.enabled") && $area !== 'ingles'),
+
+                Forms\Components\Repeater::make("{$area}.dimension2_items")
+                    ->label('Items Dimensión 2')
+                    ->schema([
+                        Forms\Components\TextInput::make('name')
+                            ->label('Nombre')
+                            ->required(),
+                    ])
+                    ->addable()
+                    ->deletable()
+                    ->reorderable()
+                    ->visible(fn (callable $get) => $get("{$area}.enabled") && $area !== 'ingles'),
+            ]);
     }
 }

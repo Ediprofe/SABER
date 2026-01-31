@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ExamResult extends Model
 {
@@ -38,6 +39,11 @@ class ExamResult extends Model
     public function enrollment(): BelongsTo
     {
         return $this->belongsTo(Enrollment::class);
+    }
+
+    public function detailResults(): HasMany
+    {
+        return $this->hasMany(ExamDetailResult::class, 'exam_result_id');
     }
 
     protected static function booted(): void

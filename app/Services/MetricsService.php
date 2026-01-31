@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\DTOs\AreaStatistics;
+use App\DTOs\DetailAreaStatistics;
+use App\DTOs\DetailItemStatistics;
 use App\DTOs\ExamStatistics;
 use App\Models\Exam;
 use Illuminate\Database\Eloquent\Collection;
@@ -308,5 +310,276 @@ class MetricsService
         $variance = $values->map(fn ($v) => pow($v - $mean, 2))->avg();
 
         return sqrt($variance);
+    }
+
+    /**
+     * Verifica si un examen tiene configuración de análisis detallado.
+     */
+    public function hasDetailConfig(Exam $exam, ?string $area = null): bool
+    {
+        return $exam->hasDetailConfig($area);
+    }
+
+    /**
+     * Obtiene la configuración de análisis detallado de un examen.
+     */
+    public function getDetailConfig(Exam $exam): Collection
+    {
+        return $exam->areaConfigs()->with('items')->get();
+    }
+
+    /**
+     * Obtiene estadísticas detalladas por item de un área.
+     */
+    public function getDetailStatistics(
+        Exam $exam,
+        string $area,
+        ?array $filters = null
+    ): ?DetailAreaStatistics {
+        $config = $exam->getDetailConfig($area);
+
+        if (! $config) {
+            return null;
+        }
+
+        $items = $config->items;
+        $dimension1Items = $config->itemsDimension1;
+        $dimension2Items = $config->hasDimension2() ? $config->itemsDimension2 : collect();
+
+        // Get exam results query with filters
+        $resultsQuery = $exam->examResults()
+            ->with(['detailResults', 'enrollment']);
+
+        if ($filters) {
+            if (isset($filters['grade'])) {
+                $resultsQuery->whereHas('enrollment', function ($q) use ($filters) {
+                    $q->where('grade', $filters['grade']);
+                });
+            }
+            if (isset($filters['group'])) {
+                $resultsQuery->whereHas('enrollment', function ($q) use ($filters) {
+                    $q->where('group', $filters['group']);
+                });
+            }
+            if (isset($filters['include_piar']) && ! $filters['include_piar']) {
+                $resultsQuery->whereHas('enrollment', function ($q) {
+                    $q->where('is_piar', false);
+                });
+            }
+        }
+
+        $examResults = $resultsQuery->get();
+
+        // Calculate statistics for dimension 1
+        $dimension1Stats = [];
+        foreach ($dimension1Items as $item) {
+            $scores = $examResults
+                ->flatMap(fn ($result) => $result->detailResults->where('exam_area_item_id', $item->id))
+                ->map(fn ($dr) => $dr->score)
+                ->filter(fn ($score) => $score !== null);
+
+            $dimension1Stats[] = $this->createDetailItemStatistics(
+                $area,
+                1,
+                $config->dimension1_name,
+                $item->name,
+                $scores
+            );
+        }
+
+        // Calculate statistics for dimension 2 (if exists)
+        $dimension2Stats = null;
+        if ($config->hasDimension2()) {
+            $dimension2Stats = [];
+            foreach ($dimension2Items as $item) {
+                $scores = $examResults
+                    ->flatMap(fn ($result) => $result->detailResults->where('exam_area_item_id', $item->id))
+                    ->map(fn ($dr) => $dr->score)
+                    ->filter(fn ($score) => $score !== null);
+
+                $dimension2Stats[] = $this->createDetailItemStatistics(
+                    $area,
+                    2,
+                    $config->dimension2_name,
+                    $item->name,
+                    $scores
+                );
+            }
+        }
+
+        return new DetailAreaStatistics(
+            area: $area,
+            areaLabel: $config->area_label,
+            dimension1: $dimension1Stats,
+            dimension2: $dimension2Stats,
+        );
+    }
+
+    /**
+     * Create DetailItemStatistics from a collection of scores.
+     */
+    private function createDetailItemStatistics(
+        string $area,
+        int $dimension,
+        string $dimensionName,
+        string $itemName,
+        $scores
+    ): DetailItemStatistics {
+        $count = $scores->count();
+
+        if ($count === 0) {
+            return new DetailItemStatistics(
+                area: $area,
+                dimension: $dimension,
+                dimensionName: $dimensionName,
+                itemName: $itemName,
+                average: 0,
+                stdDev: 0,
+                min: 0,
+                max: 0,
+                count: 0,
+            );
+        }
+
+        return new DetailItemStatistics(
+            area: $area,
+            dimension: $dimension,
+            dimensionName: $dimensionName,
+            itemName: $itemName,
+            average: $scores->avg(),
+            stdDev: $this->calculateStdDev($scores),
+            min: $scores->min(),
+            max: $scores->max(),
+            count: $count,
+        );
+    }
+
+    /**
+     * Comparativo PIAR vs No-PIAR por items detallados.
+     */
+    public function getDetailPiarComparison(
+        Exam $exam,
+        string $area,
+        ?array $filters = null
+    ): ?array {
+        $config = $exam->getDetailConfig($area);
+
+        if (! $config) {
+            return null;
+        }
+
+        $items = $config->items;
+
+        // Get PIAR and non-PIAR results
+        $resultsQuery = $exam->examResults()
+            ->with(['detailResults', 'enrollment']);
+
+        if ($filters) {
+            if (isset($filters['grade'])) {
+                $resultsQuery->whereHas('enrollment', function ($q) use ($filters) {
+                    $q->where('grade', $filters['grade']);
+                });
+            }
+            if (isset($filters['group'])) {
+                $resultsQuery->whereHas('enrollment', function ($q) use ($filters) {
+                    $q->where('group', $filters['group']);
+                });
+            }
+        }
+
+        $allResults = $resultsQuery->get();
+        $piarResults = $allResults->filter(fn ($r) => $r->enrollment->is_piar);
+        $nonPiarResults = $allResults->reject(fn ($r) => $r->enrollment->is_piar);
+
+        $comparison = [];
+
+        foreach ($items as $item) {
+            $piarScores = $piarResults
+                ->flatMap(fn ($result) => $result->detailResults->where('exam_area_item_id', $item->id))
+                ->map(fn ($dr) => $dr->score)
+                ->filter(fn ($score) => $score !== null);
+
+            $nonPiarScores = $nonPiarResults
+                ->flatMap(fn ($result) => $result->detailResults->where('exam_area_item_id', $item->id))
+                ->map(fn ($dr) => $dr->score)
+                ->filter(fn ($score) => $score !== null);
+
+            $comparison[] = [
+                'name' => $item->name,
+                'dimension' => $item->dimension,
+                'dimension_name' => $item->dimension === 1 ? $config->dimension1_name : $config->dimension2_name,
+                'piar_average' => $piarScores->avg() ?? 0,
+                'piar_count' => $piarScores->count(),
+                'non_piar_average' => $nonPiarScores->avg() ?? 0,
+                'non_piar_count' => $nonPiarScores->count(),
+                'difference' => ($nonPiarScores->avg() ?? 0) - ($piarScores->avg() ?? 0),
+            ];
+        }
+
+        return [
+            'items' => $comparison,
+            'piar_count' => $piarResults->count(),
+            'non_piar_count' => $nonPiarResults->count(),
+        ];
+    }
+
+    /**
+     * Desglose por grupo para items detallados.
+     */
+    public function getDetailGroupComparison(
+        Exam $exam,
+        string $area,
+        ?array $filters = null
+    ): ?array {
+        $config = $exam->getDetailConfig($area);
+
+        if (! $config) {
+            return null;
+        }
+
+        $items = $config->items;
+
+        // Get results grouped by group
+        $resultsQuery = $exam->examResults()
+            ->with(['detailResults', 'enrollment']);
+
+        if ($filters) {
+            if (isset($filters['grade'])) {
+                $resultsQuery->whereHas('enrollment', function ($q) use ($filters) {
+                    $q->where('grade', $filters['grade']);
+                });
+            }
+        }
+
+        $results = $resultsQuery->get()->groupBy(fn ($r) => $r->enrollment->group);
+
+        $groupComparison = [];
+
+        foreach ($results as $group => $groupResults) {
+            $groupData = [
+                'group' => $group,
+                'count' => $groupResults->count(),
+                'items' => [],
+            ];
+
+            foreach ($items as $item) {
+                $scores = $groupResults
+                    ->flatMap(fn ($result) => $result->detailResults->where('exam_area_item_id', $item->id))
+                    ->map(fn ($dr) => $dr->score)
+                    ->filter(fn ($score) => $score !== null);
+
+                $groupData['items'][$item->name] = [
+                    'name' => $item->name,
+                    'dimension' => $item->dimension,
+                    'dimension_name' => $item->dimension === 1 ? $config->dimension1_name : $config->dimension2_name,
+                    'average' => $scores->avg() ?? 0,
+                    'count' => $scores->count(),
+                ];
+            }
+
+            $groupComparison[$group] = $groupData;
+        }
+
+        return $groupComparison;
     }
 }

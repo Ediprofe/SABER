@@ -32,4 +32,29 @@ class Exam extends Model
     {
         return $this->hasMany(ExamResult::class);
     }
+
+    public function areaConfigs(): HasMany
+    {
+        return $this->hasMany(ExamAreaConfig::class);
+    }
+
+    /**
+     * Check if this exam has detailed configuration for a specific area.
+     */
+    public function hasDetailConfig(?string $area = null): bool
+    {
+        if ($area === null) {
+            return $this->areaConfigs()->exists();
+        }
+
+        return $this->areaConfigs()->where('area', $area)->exists();
+    }
+
+    /**
+     * Get the detailed configuration for a specific area.
+     */
+    public function getDetailConfig(string $area): ?ExamAreaConfig
+    {
+        return $this->areaConfigs()->where('area', $area)->first();
+    }
 }

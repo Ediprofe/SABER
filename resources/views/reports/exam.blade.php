@@ -429,6 +429,247 @@
             </div>
         </div>
 
+        <!-- Section 6: Detailed Analysis by Area -->
+        @if(isset($detailAnalysis) && !empty($detailAnalysis))
+        @php $detailKeys = array_keys($detailAnalysis); $firstArea = $detailKeys[0]; @endphp
+        <div class="card" x-data="{ activeArea: '{{ $firstArea }}' }">
+            <div class="card-header">
+                <h2 class="card-title">Sección 6: Análisis Detallado por Área</h2>
+            </div>
+            
+            <!-- Area Tabs -->
+            <div style="margin-bottom: 20px;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    @foreach($detailAnalysis as $area => $data)
+                    <button 
+                        @click="activeArea = '{{ $area }}'" 
+                        :class="activeArea === '{{ $area }}' ? 'active-tab' : 'inactive-tab'"
+                        class="tab-button"
+                        style="padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s;"
+                        :style="activeArea === '{{ $area }}' ? 'background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white;' : 'background: #f3f4f6; color: #374151;'"
+                    >
+                        {{ $data['config']->area_label ?? ucfirst($area) }}
+                    </button>
+                    @endforeach
+                </div>
+            </div>
+            
+            <!-- Content for each area -->
+            @foreach($detailAnalysis as $area => $data)
+            <div x-show="activeArea === '{{ $area }}'" x-transition>
+                
+                @if(!($data['hasConfig'] ?? false))
+                <!-- Area without configuration -->
+                <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+                    <h3 style="font-size: 18px; font-weight: 600; color: #92400e; margin-bottom: 8px;">
+                        {{ $data['area_label'] ?? ucfirst($area) }}
+                    </h3>
+                    <p style="color: #92400e; font-size: 14px;">
+                        No hay configuración detallada para esta área. Para habilitar el análisis detallado, configure las competencias y componentes desde el panel administrativo.
+                    </p>
+                </div>
+                @else
+                
+                <!-- Statistics for Dimension 1 -->
+                @if(!empty($data['statistics']->dimension1))
+                <div style="margin-bottom: 24px;">
+                    <h3 style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 12px;">
+                        {{ $data['config']->dimension1_name }}
+                    </h3>
+                    <div class="table-container">
+                        <table class="stats-table">
+                            <thead>
+                                <tr>
+                                    <th>{{ $data['config']->dimension1_name }}</th>
+                                    <th>Promedio</th>
+                                    <th>Desv. Estándar</th>
+                                    <th>Mínimo</th>
+                                    <th>Máximo</th>
+                                    <th>Evaluados</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($data['statistics']->dimension1 as $item)
+                                <tr class="area-{{ $area }}">
+                                    <td><strong>{{ $item->itemName ?? $item['itemName'] ?? $item->name ?? $item['name'] }}</strong></td>
+                                    <td>{{ number_format($item->average ?? $item['average'] ?? 0, 2) }}</td>
+                                    <td>{{ number_format($item->stdDev ?? $item['stdDev'] ?? $item->std_dev ?? $item['std_dev'] ?? 0, 2) }}</td>
+                                    <td>{{ $item->min ?? $item['min'] ?? 0 }}</td>
+                                    <td>{{ $item->max ?? $item['max'] ?? 0 }}</td>
+                                    <td>{{ $item->count ?? $item['count'] ?? 0 }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                @endif
+                
+                <!-- Statistics for Dimension 2 -->
+                @if(!empty($data['statistics']->dimension2))
+                <div style="margin-bottom: 24px;">
+                    <h3 style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 12px;">
+                        {{ $data['config']->dimension2_name }}
+                    </h3>
+                    <div class="table-container">
+                        <table class="stats-table">
+                            <thead>
+                                <tr>
+                                    <th>{{ $data['config']->dimension2_name }}</th>
+                                    <th>Promedio</th>
+                                    <th>Desv. Estándar</th>
+                                    <th>Mínimo</th>
+                                    <th>Máximo</th>
+                                    <th>Evaluados</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($data['statistics']->dimension2 as $item)
+                                <tr class="area-{{ $area }}">
+                                    <td><strong>{{ $item->itemName ?? $item['itemName'] ?? $item->name ?? $item['name'] }}</strong></td>
+                                    <td>{{ number_format($item->average ?? $item['average'] ?? 0, 2) }}</td>
+                                    <td>{{ number_format($item->stdDev ?? $item['stdDev'] ?? $item->std_dev ?? $item['std_dev'] ?? 0, 2) }}</td>
+                                    <td>{{ $item->min ?? $item['min'] ?? 0 }}</td>
+                                    <td>{{ $item->max ?? $item['max'] ?? 0 }}</td>
+                                    <td>{{ $item->count ?? $item['count'] ?? 0 }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                @endif
+                
+                <!-- PIAR vs No-PIAR Comparison -->
+                @if(isset($data['piarComparison']) && !empty($data['piarComparison']))
+                <div style="margin-bottom: 24px;">
+                    <h3 style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 12px;">
+                        Comparativo PIAR vs No-PIAR - {{ $data['config']->area_label ?? ucfirst($area) }}
+                    </h3>
+                    <div class="table-container">
+                        <table class="stats-table comparison-table">
+                            <thead>
+                                <tr>
+                                    <th>{{ $data['config']->dimension1_name }} / Elemento</th>
+                                    <th>Promedio PIAR</th>
+                                    <th>Promedio No-PIAR</th>
+                                    <th>Diferencia</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if(isset($data['piarComparison']['items']) && is_array($data['piarComparison']['items']))
+                                    @foreach($data['piarComparison']['items'] as $item)
+                                    <tr>
+                                        <td><strong>{{ $item['name'] ?? $item->name ?? 'N/A' }}</strong></td>
+                                        <td>{{ number_format($item['piar_average'] ?? $item->piar_average ?? 0, 2) }}</td>
+                                        <td>{{ number_format($item['non_piar_average'] ?? $item->non_piar_average ?? 0, 2) }}</td>
+                                        <td>
+                                            @php
+                                                $diff = ($item['non_piar_average'] ?? $item->non_piar_average ?? 0) - ($item['piar_average'] ?? $item->piar_average ?? 0);
+                                                $color = $diff > 0 ? '#dc2626' : ($diff < 0 ? '#059669' : '#6b7280');
+                                            @endphp
+                                            <span style="color: {{ $color }}; font-weight: 600;">
+                                                {{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 2) }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                @endif
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                @endif
+                
+                <!-- Group Comparison -->
+                @if(isset($data['groupComparison']) && !empty($data['groupComparison']))
+                <div style="margin-bottom: 24px;">
+                    <h3 style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 12px;">
+                        Desglose por Grupo - {{ $data['config']->area_label ?? ucfirst($area) }}
+                    </h3>
+                    <div class="table-container">
+                        <table class="stats-table">
+                            <thead>
+                                <tr>
+                                    <th>Grupo</th>
+@if(!empty($data['statistics']->dimension1))
+@foreach($data['statistics']->dimension1 as $item)
+                                        <th>{{ $item->itemName ?? $item['itemName'] ?? $item->name ?? $item['name'] }}</th>
+                                        @endforeach
+                                    @endif
+@if(!empty($data['statistics']->dimension2))
+@foreach($data['statistics']->dimension2 as $item)
+                                        <th>{{ $item->itemName ?? $item['itemName'] ?? $item->name ?? $item['name'] }}</th>
+                                        @endforeach
+                                    @endif
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($data['groupComparison'] as $group => $groupData)
+                                <tr>
+                                    <td><strong>{{ $group }}</strong></td>
+                                    @if(isset($groupData['items']) && is_array($groupData['items']))
+                                        @foreach($groupData['items'] as $itemData)
+                                        <td>{{ number_format($itemData['average'] ?? $itemData->average ?? 0, 2) }}</td>
+                                        @endforeach
+                                    @endif
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                @endif
+                
+                <!-- Detailed Charts -->
+                <div style="margin-top: 24px;">
+                    <h3 style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 16px;">
+                        Gráficos de Análisis Detallado
+                    </h3>
+                    <div class="chart-grid">
+                        <!-- Chart for Dimension 1 -->
+@if(!empty($data['statistics']->dimension1))
+                        <div class="chart-container">
+                            <div class="chart-title">Promedios - {{ $data['config']->dimension1_name }}</div>
+                            <div class="chart-wrapper">
+                                <canvas id="chart{{ ucfirst($area) }}Dim1"></canvas>
+                            </div>
+                        </div>
+                        @endif
+                        
+                        <!-- Chart for Dimension 2 -->
+                        @if(!empty($data['statistics']->dimension2))
+                        <div class="chart-container">
+                            <div class="chart-title">Promedios - {{ $data['config']->dimension2_name }}</div>
+                            <div class="chart-wrapper">
+                                <canvas id="chart{{ ucfirst($area) }}Dim2"></canvas>
+                            </div>
+                        </div>
+                        @endif
+                        
+                        <!-- Chart for PIAR Comparison -->
+                        @if(isset($data['piarComparison']) && !empty($data['piarComparison']['items']))
+                        <div class="chart-container">
+                            <div class="chart-title">Comparativo PIAR vs No-PIAR</div>
+                            <div class="chart-wrapper">
+                                <canvas id="chart{{ ucfirst($area) }}Piar"></canvas>
+                            </div>
+                        </div>
+                        @endif
+                    </div>
+                </div>
+                @endif
+                
+            </div>
+            @endforeach
+        </div>
+        
+        <script>
+            // Embedded detailed analysis data for charts
+            window.detailAnalysisData = {!! json_encode($detailAnalysis) !!};
+        </script>
+        @endif
+
         <!-- Footer -->
         <div class="footer">
             <p>Sistema SABER - Análisis ICFES | Generado el {{ $generatedAt }}</p>
@@ -823,6 +1064,127 @@
                             y: { beginAtZero: true, title: { display: true, text: 'Cantidad de Estudiantes' } },
                             x: { title: { display: true, text: 'Rango de Puntaje' } }
                         }
+                    }
+                });
+            }
+            
+            // 6. Detailed Analysis Charts (if detailAnalysisData exists)
+            if (typeof window.detailAnalysisData !== 'undefined') {
+                Object.keys(window.detailAnalysisData).forEach(area => {
+                    const areaData = window.detailAnalysisData[area];
+                    const areaColor = areaColors[area] || '#3b82f6';
+                    
+                    // Chart for Dimension 1
+                    const dim1Ctx = document.getElementById('chart' + area.charAt(0).toUpperCase() + area.slice(1) + 'Dim1');
+                    if (dim1Ctx && areaData.statistics && areaData.statistics.dimension1) {
+                        const dim1Items = areaData.statistics.dimension1;
+                        const dim1Labels = dim1Items.map(item => item.itemName || item.name || 'N/A');
+                        const dim1Values = dim1Items.map(item => item.average || 0);
+                        
+                        new Chart(dim1Ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: dim1Labels,
+                                datasets: [{
+                                    label: 'Promedio',
+                                    data: dim1Values,
+                                    backgroundColor: areaColor,
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    datalabels: {
+                                        anchor: 'end',
+                                        align: 'top',
+                                        formatter: (value) => Math.round(value * 10) / 10,
+                                        font: { weight: 'bold', size: 11 },
+                                        color: '#374151'
+                                    }
+                                },
+                                scales: {
+                                    y: { beginAtZero: true, max: 100, title: { display: true, text: 'Puntaje' } }
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Chart for Dimension 2
+                    const dim2Ctx = document.getElementById('chart' + area.charAt(0).toUpperCase() + area.slice(1) + 'Dim2');
+                    if (dim2Ctx && areaData.statistics && areaData.statistics.dimension2) {
+                        const dim2Items = areaData.statistics.dimension2;
+                        const dim2Labels = dim2Items.map(item => item.itemName || item.name || 'N/A');
+                        const dim2Values = dim2Items.map(item => item.average || 0);
+                        
+                        new Chart(dim2Ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: dim2Labels,
+                                datasets: [{
+                                    label: 'Promedio',
+                                    data: dim2Values,
+                                    backgroundColor: areaColor,
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    datalabels: {
+                                        anchor: 'end',
+                                        align: 'top',
+                                        formatter: (value) => Math.round(value * 10) / 10,
+                                        font: { weight: 'bold', size: 11 },
+                                        color: '#374151'
+                                    }
+                                },
+                                scales: {
+                                    y: { beginAtZero: true, max: 100, title: { display: true, text: 'Puntaje' } }
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Chart for PIAR Comparison
+                    const piarDetailCtx = document.getElementById('chart' + area.charAt(0).toUpperCase() + area.slice(1) + 'Piar');
+                    if (piarDetailCtx && areaData.piarComparison && areaData.piarComparison.items) {
+                        const items = areaData.piarComparison.items;
+                        const piarLabels = items.map(item => item.name || 'N/A');
+                        const piarData = items.map(item => item.piar_average || item.piarAverage || 0);
+                        const nonPiarData = items.map(item => item.non_piar_average || item.nonPiarAverage || 0);
+                        
+                        new Chart(piarDetailCtx, {
+                            type: 'bar',
+                            data: {
+                                labels: piarLabels,
+                                datasets: [
+                                    { label: 'Sin PIAR', data: nonPiarData, backgroundColor: '#3b82f6' },
+                                    { label: 'PIAR', data: piarData, backgroundColor: '#fbbf24' }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { position: 'bottom' },
+                                    datalabels: {
+                                        anchor: 'end',
+                                        align: 'top',
+                                        formatter: (value) => Math.round(value * 10) / 10,
+                                        font: { weight: 'bold', size: 10 },
+                                        color: '#374151'
+                                    }
+                                },
+                                scales: {
+                                    y: { beginAtZero: true, max: 100 }
+                                }
+                            }
+                        });
                     }
                 });
             }
