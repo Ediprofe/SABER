@@ -84,7 +84,7 @@ class ExamResultResource extends Resource
                 Tables\Columns\TextColumn::make('enrollment.academicYear.year')
                     ->label('Año')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('enrollment.group_label')
+                Tables\Columns\TextColumn::make('enrollment.group')
                     ->label('Grupo')
                     ->sortable(),
                 Tables\Columns\IconColumn::make('enrollment.is_piar')

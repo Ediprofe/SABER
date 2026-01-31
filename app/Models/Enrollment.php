@@ -40,9 +40,4 @@ class Enrollment extends Model
     {
         return $this->hasMany(ExamResult::class);
     }
-
-    public function getGroupLabelAttribute(): string
-    {
-        return $this->group;
-    }
 }

@@ -29,7 +29,7 @@ class ResultsTemplateExport implements FromCollection, WithHeadings
             'code' => $enrollment->student->code,
             'first_name' => $enrollment->student->first_name,
             'last_name' => $enrollment->student->last_name,
-            'group' => $enrollment->group_label,
+            'group' => $enrollment->group,
             'is_piar' => $enrollment->is_piar ? 'SI' : 'NO',
             'lectura' => '',
             'matematicas' => '',
