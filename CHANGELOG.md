@@ -5,6 +5,114 @@
 
 ---
 
+## [Feature 3] Importación Zipgrade (Prototipo) — 2026-02-01
+
+### Estado: 🔄 EN PROGRESO
+
+### Rama: `feature/zipgrade-prototype`
+
+---
+
+### Tareas Completadas
+
+- [ ] Migración: agregar `document_id` a students
+- [ ] Migración: crear `tag_hierarchy`
+- [ ] Migración: crear `exam_sessions`
+- [ ] Migración: crear `zipgrade_imports`
+- [ ] Migración: crear `exam_questions`
+- [ ] Migración: crear `question_tags`
+- [ ] Migración: crear `student_answers`
+- [ ] Modelo `TagHierarchy` creado
+- [ ] Modelo `ExamSession` creado
+- [ ] Modelo `ZipgradeImport` creado
+- [ ] Modelo `ExamQuestion` creado
+- [ ] Modelo `QuestionTag` creado
+- [ ] Modelo `StudentAnswer` creado
+- [ ] Relaciones en modelo `Student` (document_id)
+- [ ] Relaciones en modelo `Exam` (sessions)
+- [ ] Import `ZipgradeTagsImport` creado
+- [ ] Lógica de detección de tags nuevos
+- [ ] Lógica de inferencia de área desde tags hijos
+- [ ] Lógica de match de estudiantes por documento
+- [ ] `ZipgradeMetricsService` creado
+- [ ] `ZipgradeMetricsService::getStudentTagScore()` implementado
+- [ ] `ZipgradeMetricsService::getStudentAreaScore()` implementado
+- [ ] `ZipgradeMetricsService::getTagStatistics()` implementado
+- [ ] `ZipgradeMetricsService::inferAreaFromTags()` implementado
+- [ ] Resource `TagHierarchyResource` creado
+- [ ] Action `ImportZipgradeAction` implementada
+- [ ] Asistente de clasificación de tags
+- [ ] Vista de match de estudiantes
+- [ ] Vista de resultados (tabla simple)
+- [ ] Soporte para 1 o 2 sesiones
+- [ ] Combinación correcta de sesiones en cálculos
+- [ ] Manejo de decimales con coma (0,334)
+
+---
+
+### Tareas Pendientes / Bloqueadas
+
+*(Agregar aquí cualquier tarea que no se pueda completar y por qué)*
+
+---
+
+### Decisiones Tomadas
+
+| Decisión | Justificación |
+|----------|---------------|
+| Usar `document_id` como identificador | El código STU-XXXX no es conocido por Zipgrade, el documento sí |
+| Jerarquía de tags híbrida | Primera vez: asistente guiado. Siguientes: automático |
+| Inferir área desde tags hijos | Si falta tag de área pero hay competencia/componente conocido, se infiere |
+| Crear ZipgradeMetricsService separado | No mezclar con MetricsService de Feature 1/2 |
+
+---
+
+### Problemas Encontrados y Soluciones
+
+| Problema | Solución |
+|----------|----------|
+| *(pendiente)* | *(pendiente)* |
+
+---
+
+### Archivos a Crear
+
+```
+database/migrations/
+├── XXXX_XX_XX_XXXXXX_add_document_id_to_students_table.php
+├── XXXX_XX_XX_XXXXXX_create_tag_hierarchy_table.php
+├── XXXX_XX_XX_XXXXXX_create_exam_sessions_table.php
+├── XXXX_XX_XX_XXXXXX_create_zipgrade_imports_table.php
+├── XXXX_XX_XX_XXXXXX_create_exam_questions_table.php
+├── XXXX_XX_XX_XXXXXX_create_question_tags_table.php
+└── XXXX_XX_XX_XXXXXX_create_student_answers_table.php
+
+app/Models/
+├── TagHierarchy.php
+├── ExamSession.php
+├── ZipgradeImport.php
+├── ExamQuestion.php
+├── QuestionTag.php
+└── StudentAnswer.php
+
+app/Services/
+└── ZipgradeMetricsService.php
+
+app/Imports/
+└── ZipgradeTagsImport.php
+
+app/Filament/Resources/
+└── TagHierarchyResource.php
+```
+
+---
+
+### Notas para el Revisor
+
+*(El implementador debe agregar aquí cualquier nota importante para la revisión)*
+
+---
+
 ## [Feature 2] Análisis por Competencias y Componentes — 2026-01-30/31
 
 ### Estado: ✅ COMPLETADO (Después de 15+ iteraciones de corrección)

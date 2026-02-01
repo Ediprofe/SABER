@@ -668,7 +668,595 @@ class DetailAreaStatistics {
 
 ## 📝 Historial de Features
 
-| Feature | Estado | Fecha |
-|---------|--------|-------|
-| Feature 1: MVP Base | ✅ Completado | 2026-01-29 |
-| Feature 2: Análisis Detallado | 🔄 En desarrollo | 2026-01-30 |
+| Feature | Estado | Fecha | Rama |
+|---------|--------|-------|------|
+| Feature 1: MVP Base | ✅ Completado | 2026-01-29 | main |
+| Feature 2: Análisis Detallado | ✅ Completado | 2026-01-30 | main |
+| Feature 3: Importación Zipgrade | 🔄 En desarrollo | 2026-02-01 | feature/zipgrade-prototype |
+
+---
+
+# 🆕 FEATURE 3: IMPORTACIÓN ZIPGRADE (PROTOTIPO)
+
+> **Estado:** EN DESARROLLO
+> **Rama:** `feature/zipgrade-prototype`
+> **Prioridad:** Alta
+> **Tipo:** Prototipo para validación
+
+---
+
+## 🎯 Objetivo de la Feature
+
+Crear un prototipo que permita importar datos directamente desde **Zipgrade** (plataforma de escaneo y calificación), eliminando el cálculo manual del docente y garantizando **ponderación correcta** de puntajes por número de preguntas.
+
+---
+
+## 📋 Problema que Resuelve
+
+### Situación Actual (Problemática)
+
+```
+Zipgrade → Docente calcula manualmente → Excel plantilla → SABER
+                      ↑
+              ERROR DE PONDERACIÓN
+```
+
+**El error:** Si Sesión 1 tiene 2 preguntas de "Químico" y Sesión 2 tiene 10, promediar las sesiones da peso 50%-50% cuando debería ser proporcional (2/12 vs 10/12).
+
+### Solución Propuesta
+
+```
+Zipgrade → Excel crudo → SABER (calcula todo) → Reporte
+```
+
+**Ventaja:** Ponderación correcta = Σ(puntos obtenidos) / Σ(puntos posibles) × 100
+
+---
+
+## 🔑 Cambios Clave
+
+### 1. Identificador de Estudiante
+
+| Antes | Después |
+|-------|---------|
+| `code` = STU-2026-00001 | `document_id` = 1234567890 |
+
+El documento de identidad (solo números) es el identificador único del estudiante.
+
+### 2. Fuente de Datos
+
+| Antes | Después |
+|-------|---------|
+| Plantilla Excel manual | Excel exportado de Zipgrade |
+
+### 3. Sesiones de Examen
+
+| Antes | Después |
+|-------|---------|
+| Una importación por examen | 1 o 2 sesiones por examen |
+
+---
+
+## 🧩 Modelo de Datos
+
+### Diagrama de Nuevas Tablas
+
+```
+┌─────────────────────┐
+│   tag_hierarchy     │  ← Configuración de jerarquía de tags
+│─────────────────────│
+│ id                  │
+│ tag_name            │  "Químico", "Ciencias", "Uso comprensivo"
+│ tag_type            │  area | competencia | componente | tipo_texto | parte
+│ parent_area         │  NULL si es área, nombre del área si es hijo
+│ created_at          │
+│ updated_at          │
+└─────────────────────┘
+
+┌─────────────────────┐
+│   exam_sessions     │  ← Sesiones de un examen
+│─────────────────────│
+│ id                  │
+│ exam_id (FK)        │
+│ session_number      │  1 o 2
+│ name                │  "Sesión 1", "Sesión 2"
+│ zipgrade_quiz_name  │  Nombre del quiz en Zipgrade
+│ total_questions     │  Calculado después de importar
+│ created_at          │
+│ updated_at          │
+└─────────────────────┘
+
+┌─────────────────────┐
+│  zipgrade_imports   │  ← Registro de importaciones
+│─────────────────────│
+│ id                  │
+│ session_id (FK)     │
+│ filename            │
+│ total_rows          │
+│ status              │  pending | processing | completed | error
+│ error_message       │  NULL o mensaje de error
+│ created_at          │
+│ updated_at          │
+└─────────────────────┘
+
+┌─────────────────────┐
+│   exam_questions    │  ← Preguntas detectadas por sesión
+│─────────────────────│
+│ id                  │
+│ session_id (FK)     │
+│ question_number     │  1, 2, 3...
+│ possible_points     │  0.334 (típico Zipgrade)
+│ created_at          │
+│ updated_at          │
+└─────────────────────┘
+
+┌─────────────────────┐
+│  question_tags      │  ← Tags asignados a cada pregunta
+│─────────────────────│
+│ id                  │
+│ question_id (FK)    │
+│ tag_hierarchy_id(FK)│  Referencia a la jerarquía
+│ inferred_area       │  Área inferida (si el tag es hijo)
+└─────────────────────┘
+
+┌─────────────────────┐
+│  student_answers    │  ← Respuestas de cada estudiante
+│─────────────────────│
+│ id                  │
+│ question_id (FK)    │
+│ enrollment_id (FK)  │
+│ earned_points       │  0 o 0.334
+│ possible_points     │  0.334
+│ created_at          │
+│ updated_at          │
+│                     │
+│ UNIQUE(question_id, │
+│        enrollment_id)│
+└─────────────────────┘
+```
+
+### Migración: Modificar Students
+
+```php
+// Agregar documento y hacer code nullable (para migración gradual)
+Schema::table('students', function (Blueprint $table) {
+    $table->string('document_id', 20)->nullable()->unique()->after('code');
+});
+
+// El code se mantiene por retrocompatibilidad con Features 1 y 2
+// En Feature 3, document_id es el identificador principal
+```
+
+### Migraciones Nuevas
+
+#### 1. Tabla `tag_hierarchy`
+
+```php
+Schema::create('tag_hierarchy', function (Blueprint $table) {
+    $table->id();
+    $table->string('tag_name', 100)->unique();
+    $table->enum('tag_type', ['area', 'competencia', 'componente', 'tipo_texto', 'parte']);
+    $table->string('parent_area', 50)->nullable();
+    $table->timestamps();
+
+    $table->index('tag_type');
+    $table->index('parent_area');
+});
+```
+
+#### 2. Tabla `exam_sessions`
+
+```php
+Schema::create('exam_sessions', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('exam_id')->constrained()->cascadeOnDelete();
+    $table->unsignedTinyInteger('session_number'); // 1 o 2
+    $table->string('name', 50); // "Sesión 1"
+    $table->string('zipgrade_quiz_name', 150)->nullable();
+    $table->unsignedSmallInteger('total_questions')->default(0);
+    $table->timestamps();
+
+    $table->unique(['exam_id', 'session_number']);
+});
+```
+
+#### 3. Tabla `zipgrade_imports`
+
+```php
+Schema::create('zipgrade_imports', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('exam_session_id')->constrained('exam_sessions')->cascadeOnDelete();
+    $table->string('filename', 255);
+    $table->unsignedInteger('total_rows')->default(0);
+    $table->enum('status', ['pending', 'processing', 'completed', 'error'])->default('pending');
+    $table->text('error_message')->nullable();
+    $table->timestamps();
+});
+```
+
+#### 4. Tabla `exam_questions`
+
+```php
+Schema::create('exam_questions', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('exam_session_id')->constrained('exam_sessions')->cascadeOnDelete();
+    $table->unsignedSmallInteger('question_number');
+    $table->decimal('possible_points', 5, 3)->default(0.334);
+    $table->timestamps();
+
+    $table->unique(['exam_session_id', 'question_number']);
+});
+```
+
+#### 5. Tabla `question_tags`
+
+```php
+Schema::create('question_tags', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('exam_question_id')->constrained('exam_questions')->cascadeOnDelete();
+    $table->foreignId('tag_hierarchy_id')->constrained('tag_hierarchy')->cascadeOnDelete();
+    $table->string('inferred_area', 50)->nullable();
+    $table->timestamps();
+
+    $table->unique(['exam_question_id', 'tag_hierarchy_id']);
+});
+```
+
+#### 6. Tabla `student_answers`
+
+```php
+Schema::create('student_answers', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('exam_question_id')->constrained('exam_questions')->cascadeOnDelete();
+    $table->foreignId('enrollment_id')->constrained()->cascadeOnDelete();
+    $table->decimal('earned_points', 5, 3)->default(0);
+    $table->decimal('possible_points', 5, 3)->default(0.334);
+    $table->timestamps();
+
+    $table->unique(['exam_question_id', 'enrollment_id']);
+    $table->index('enrollment_id');
+});
+```
+
+---
+
+## 📥 Formato de Entrada: Excel Zipgrade (Tags)
+
+### Estructura del Archivo
+
+| Columna | Campo | Uso |
+|---------|-------|-----|
+| A | Tag | Nombre del tag (área, competencia, componente) |
+| B | StudentFirstName | Nombre del estudiante |
+| C | StudentLastName | Apellido del estudiante |
+| D | StudentID | ID interno de Zipgrade |
+| E | StudentExt | **Documento de identidad** (External Id) |
+| F | QuizName | Nombre del quiz |
+| G | TagType | Siempre "question" |
+| H | QuestionNum | Número de pregunta |
+| I | EarnedPoints | Puntos obtenidos (0 o 0.334) |
+| J | PossiblePoints | Puntos posibles (0.334) |
+
+### Ejemplo de Datos
+
+```
+Tag                    | StudentFirstName | StudentLastName | StudentID | StudentExt | QuizName        | TagType  | QuestionNum | EarnedPoints | PossiblePoints
+Ciencias               | SALOMÉ           | ACEVEDO OCAMPO  | 44216     | 1234567890 | La materia Q11  | question | 1           | 0,334        | 0,334
+Uso comprensivo...     | SALOMÉ           | ACEVEDO OCAMPO  | 44216     | 1234567890 | La materia Q11  | question | 1           | 0,334        | 0,334
+Químico                | SALOMÉ           | ACEVEDO OCAMPO  | 44216     | 1234567890 | La materia Q11  | question | 1           | 0,334        | 0,334
+Ciencias               | SALOMÉ           | ACEVEDO OCAMPO  | 44216     | 1234567890 | La materia Q11  | question | 2           | 0            | 0,334
+...
+```
+
+**Nota:** Una pregunta genera múltiples filas (una por cada tag asignado).
+
+---
+
+## 🔄 Flujo de Importación
+
+### Paso 1: Crear/Seleccionar Examen
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Exámenes → Crear Examen                                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Nombre: [Simulacro ICFES Marzo 2025        ]                      │
+│  Tipo:   [SIMULACRO ▼]                                             │
+│  Fecha:  [2025-03-15]                                              │
+│                                                                     │
+│  Número de Sesiones: [2 ▼]                                         │
+│                                                                     │
+│                                        [Cancelar]  [Crear Examen]   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Paso 2: Importar Sesiones
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Examen: Simulacro ICFES Marzo 2025                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Sesiones del Examen:                                               │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Sesión 1                                    [Importar Excel] │   │
+│  │ Estado: ⚪ Sin importar                                      │   │
+│  │ Preguntas: —                                                 │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Sesión 2                                    [Importar Excel] │   │
+│  │ Estado: ⚪ Sin importar                                      │   │
+│  │ Preguntas: —                                                 │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Paso 3: Asistente de Importación (Tags Nuevos)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Importar Excel Zipgrade - Sesión 1                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ✅ Archivo cargado: zipgrade_sesion1.xlsx (48,320 filas)          │
+│                                                                     │
+│  ⚠️ Se detectaron 5 tags nuevos que necesitan clasificación:       │
+│                                                                     │
+│  ┌──────────────────────────┬─────────────────┬──────────────────┐ │
+│  │ Tag                      │ Tipo            │ Área padre       │ │
+│  ├──────────────────────────┼─────────────────┼──────────────────┤ │
+│  │ Ciencias                 │ [Área ▼]        │ —                │ │
+│  │ Químico                  │ [Componente ▼]  │ [Ciencias ▼]     │ │
+│  │ Uso comprensivo...       │ [Competencia ▼] │ [Ciencias ▼]     │ │
+│  │ Matemáticas              │ [Área ▼]        │ —                │ │
+│  │ Interpretación...        │ [Competencia ▼] │ [Matemáticas ▼]  │ │
+│  └──────────────────────────┴─────────────────┴──────────────────┘ │
+│                                                                     │
+│  ☑ Guardar esta configuración para futuros imports                 │
+│                                                                     │
+│                              [Cancelar]  [Continuar]                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Paso 4: Match de Estudiantes
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Verificar Estudiantes                                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ✅ 95 estudiantes encontrados por documento                       │
+│  ⚠️ 5 estudiantes no encontrados en el sistema:                    │
+│                                                                     │
+│  ┌─────────────────┬────────────────┬───────────────────────────┐  │
+│  │ Documento       │ Nombre         │ Acción                    │  │
+│  ├─────────────────┼────────────────┼───────────────────────────┤  │
+│  │ 1098765432      │ JUAN PÉREZ     │ [Crear estudiante ▼]      │  │
+│  │ 1087654321      │ MARÍA GÓMEZ    │ [Vincular existente ▼]    │  │
+│  │ ...             │                │                           │  │
+│  └─────────────────┴────────────────┴───────────────────────────┘  │
+│                                                                     │
+│                              [Cancelar]  [Importar]                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Paso 5: Confirmación
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ✅ Importación Completada                                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Sesión 1 importada exitosamente:                                   │
+│                                                                     │
+│  • Estudiantes: 100                                                 │
+│  • Preguntas: 120                                                   │
+│  • Tags procesados: 15                                              │
+│  • Respuestas registradas: 12,000                                   │
+│                                                                     │
+│  Puede importar la Sesión 2 cuando esté lista.                     │
+│                                                                     │
+│                                        [Ir a Sesión 2]  [Cerrar]   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📊 Cálculo de Puntajes
+
+### Fórmula General
+
+```
+Puntaje(tag) = Σ(earned_points para tag) / Σ(possible_points para tag) × 100
+```
+
+### Ejemplo: Componente "Químico"
+
+**Sesión 1:**
+- Q1: 0.334 / 0.334 (tag: Químico)
+- Q4: 0 / 0.334 (tag: Químico)
+- Subtotal: 0.334 / 0.668
+
+**Sesión 2:**
+- Q2: 0.334 / 0.334 (tag: Químico)
+- Q5: 0.334 / 0.334 (tag: Químico)
+- Q8: 0 / 0.334 (tag: Químico)
+- ... (7 más)
+- Subtotal: 2.338 / 3.340
+
+**Cálculo CORRECTO:**
+```
+Químico = (0.334 + 2.338) / (0.668 + 3.340) × 100 = 66.7%
+```
+
+### Puntaje por Área
+
+El área se calcula igual, sumando todos los puntos de preguntas que tienen el tag del área:
+
+```
+Ciencias = Σ(earned de todas las Q con tag "Ciencias") / Σ(possible) × 100
+```
+
+---
+
+## ⚙️ ZipgradeMetricsService
+
+### Nuevos Métodos
+
+```php
+class ZipgradeMetricsService
+{
+    /**
+     * Calcula puntaje por tag para un estudiante.
+     */
+    public function getStudentTagScore(
+        Enrollment $enrollment,
+        Exam $exam,
+        string $tagName
+    ): float;
+
+    /**
+     * Calcula puntaje por área para un estudiante (combinando sesiones).
+     */
+    public function getStudentAreaScore(
+        Enrollment $enrollment,
+        Exam $exam,
+        string $area
+    ): float;
+
+    /**
+     * Obtiene estadísticas por tag para todo el examen.
+     */
+    public function getTagStatistics(
+        Exam $exam,
+        string $tagName,
+        ?array $filters = null
+    ): TagStatistics;
+
+    /**
+     * Obtiene comparativo PIAR vs No-PIAR por tag.
+     */
+    public function getTagPiarComparison(
+        Exam $exam,
+        string $tagName,
+        ?array $filters = null
+    ): array;
+
+    /**
+     * Obtiene desglose por grupo para un tag.
+     */
+    public function getTagGroupComparison(
+        Exam $exam,
+        string $tagName,
+        ?array $filters = null
+    ): array;
+
+    /**
+     * Infiere el área de una pregunta basándose en sus tags.
+     */
+    public function inferAreaFromTags(array $tagNames): ?string;
+}
+```
+
+---
+
+## 📋 Panel Administrativo Filament
+
+### Nuevos Recursos
+
+| Recurso | Tipo | Descripción |
+|---------|------|-------------|
+| **TagHierarchyResource** | CRUD | Gestionar jerarquía de tags |
+| **ExamSessionResource** | Inline | Gestionar sesiones dentro de ExamResource |
+
+### Nuevas Acciones en ExamResource
+
+| Acción | Descripción |
+|--------|-------------|
+| `ImportZipgradeAction` | Importar Excel de Zipgrade por sesión |
+| `ViewImportStatusAction` | Ver estado de importaciones |
+| `GenerateZipgradeReportAction` | Generar reporte con datos de Zipgrade |
+
+---
+
+## 📦 Entregables del Prototipo
+
+| # | Entregable | Ubicación | Prioridad |
+|---|------------|-----------|-----------|
+| 1 | Migración: `document_id` en students | `database/migrations/` | ✅ Alta |
+| 2 | Migración: `tag_hierarchy` | `database/migrations/` | ✅ Alta |
+| 3 | Migración: `exam_sessions` | `database/migrations/` | ✅ Alta |
+| 4 | Migración: `zipgrade_imports` | `database/migrations/` | ✅ Alta |
+| 5 | Migración: `exam_questions` | `database/migrations/` | ✅ Alta |
+| 6 | Migración: `question_tags` | `database/migrations/` | ✅ Alta |
+| 7 | Migración: `student_answers` | `database/migrations/` | ✅ Alta |
+| 8 | Modelo `TagHierarchy` | `app/Models/` | ✅ Alta |
+| 9 | Modelo `ExamSession` | `app/Models/` | ✅ Alta |
+| 10 | Modelo `ZipgradeImport` | `app/Models/` | ✅ Alta |
+| 11 | Modelo `ExamQuestion` | `app/Models/` | ✅ Alta |
+| 12 | Modelo `QuestionTag` | `app/Models/` | ✅ Alta |
+| 13 | Modelo `StudentAnswer` | `app/Models/` | ✅ Alta |
+| 14 | Import `ZipgradeTagsImport` | `app/Imports/` | ✅ Alta |
+| 15 | Service `ZipgradeMetricsService` | `app/Services/` | ✅ Alta |
+| 16 | Resource `TagHierarchyResource` | `app/Filament/Resources/` | ✅ Alta |
+| 17 | Action `ImportZipgradeAction` | `app/Filament/Actions/` | ✅ Alta |
+| 18 | Vista de resultados (tabla simple) | `resources/views/` | ✅ Alta |
+| 19 | Seeder con datos de prueba | `database/seeders/` | 🟡 Media |
+| 20 | Reporte HTML completo | `resources/views/reports/` | ❌ Fuera de prototipo |
+
+---
+
+## ✅ Criterios de Aceptación del Prototipo
+
+### Definition of Done
+
+- [ ] Puedo agregar `document_id` a estudiantes existentes
+- [ ] Puedo configurar la jerarquía de tags (CRUD en Filament)
+- [ ] Puedo crear un examen con 1 o 2 sesiones
+- [ ] Puedo importar un Excel de Zipgrade (formato tags)
+- [ ] El sistema detecta tags nuevos y pide clasificación
+- [ ] El sistema infiere el área si falta pero hay tag hijo conocido
+- [ ] El sistema hace match de estudiantes por documento
+- [ ] El sistema calcula puntajes correctamente (ponderados por # preguntas)
+- [ ] Puedo ver los resultados calculados en una tabla simple
+- [ ] Las 2 sesiones se combinan correctamente en los cálculos
+
+### Casos de Prueba Obligatorios
+
+1. **Importar sesión única:** 100 estudiantes, 120 preguntas
+2. **Importar dos sesiones:** Combinación correcta de puntajes
+3. **Tag sin área explícita:** Sistema infiere desde tag hijo
+4. **Tag completamente nuevo:** Sistema pide clasificación
+5. **Estudiante sin match:** Sistema permite crear o vincular
+6. **Cálculo ponderado:** Verificar que 2 preguntas + 10 preguntas = 12 preguntas (no 50%-50%)
+
+---
+
+## 🔧 Notas de Implementación
+
+1. **Retrocompatibilidad:** Esta feature es INDEPENDIENTE de Features 1 y 2. Coexisten en ramas separadas.
+
+2. **document_id:** Se agrega como campo adicional, `code` se mantiene para no romper Features 1 y 2.
+
+3. **Performance:** Con ~70,000 filas por sesión, usar:
+   - Importación en chunks (1,000 filas)
+   - Transacciones por chunk
+   - Índices en `enrollment_id`, `exam_question_id`
+
+4. **Decimales Zipgrade:** Los puntos usan coma como separador decimal (0,334). El import debe manejar esto.
+
+5. **UI en español:** Todos los labels en español colombiano.
+
+---
+
+## 📝 Notas para el Agente Implementador
+
+1. **Rama:** Trabajar en `feature/zipgrade-prototype`
+2. **BD:** Crear migraciones nuevas, NO modificar las existentes de Feature 1/2
+3. **Modelos:** Crear modelos nuevos, NO modificar Student (solo agregar `document_id`)
+4. **Servicios:** Crear `ZipgradeMetricsService` SEPARADO de `MetricsService`
+5. **Actualizar CHANGELOG.md** mientras avanzas
