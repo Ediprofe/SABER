@@ -785,7 +785,6 @@ El documento de identidad (solo números) es el identificador único del estudia
 │ id                  │
 │ session_id (FK)     │
 │ question_number     │  1, 2, 3...
-│ possible_points     │  0.334 (típico Zipgrade)
 │ created_at          │
 │ updated_at          │
 └─────────────────────┘
@@ -805,8 +804,7 @@ El documento de identidad (solo números) es el identificador único del estudia
 │ id                  │
 │ question_id (FK)    │
 │ enrollment_id (FK)  │
-│ earned_points       │  0 o 0.334
-│ possible_points     │  0.334
+│ is_correct          │  boolean (true/false)
 │ created_at          │
 │ updated_at          │
 │                     │
@@ -881,7 +879,6 @@ Schema::create('exam_questions', function (Blueprint $table) {
     $table->id();
     $table->foreignId('exam_session_id')->constrained('exam_sessions')->cascadeOnDelete();
     $table->unsignedSmallInteger('question_number');
-    $table->decimal('possible_points', 5, 3)->default(0.334);
     $table->timestamps();
 
     $table->unique(['exam_session_id', 'question_number']);
@@ -909,13 +906,17 @@ Schema::create('student_answers', function (Blueprint $table) {
     $table->id();
     $table->foreignId('exam_question_id')->constrained('exam_questions')->cascadeOnDelete();
     $table->foreignId('enrollment_id')->constrained()->cascadeOnDelete();
-    $table->decimal('earned_points', 5, 3)->default(0);
-    $table->decimal('possible_points', 5, 3)->default(0.334);
+    $table->boolean('is_correct')->default(false);  // true si EarnedPoints > 0
     $table->timestamps();
 
     $table->unique(['exam_question_id', 'enrollment_id']);
     $table->index('enrollment_id');
 });
+```
+
+**Lógica de importación:**
+```php
+$isCorrect = (float) str_replace(',', '.', $row['EarnedPoints']) > 0;
 ```
 
 ---
@@ -938,6 +939,15 @@ Schema::create('student_answers', function (Blueprint $table) {
 | J | PossiblePoints | Puntos posibles (0.334) |
 
 **IMPORTANTE:** El campo `StudentID` de Zipgrade contendrá el documento de identidad del estudiante (solo números). Este es el campo que se usará para hacer match con `document_id` en la tabla `students`.
+
+### Interpretación de Puntos (REGLA SIMPLIFICADA)
+
+| EarnedPoints | Interpretación |
+|--------------|----------------|
+| `> 0` (ej: 0.334) | Pregunta **CORRECTA** (1 punto) |
+| `= 0` | Pregunta **INCORRECTA** (0 puntos) |
+
+**NO se usan los decimales de Zipgrade.** Solo se determina si la pregunta está correcta o incorrecta.
 
 ### Ejemplo de Datos
 
@@ -1070,37 +1080,79 @@ Ciencias               | SALOMÉ           | ACEVEDO OCAMPO  | 1234567890 |     
 
 ## 📊 Cálculo de Puntajes
 
-### Fórmula General
+### Regla de Correcto/Incorrecto
 
 ```
-Puntaje(tag) = Σ(earned_points para tag) / Σ(possible_points para tag) × 100
+Si EarnedPoints > 0 → Pregunta CORRECTA (cuenta como 1)
+Si EarnedPoints = 0 → Pregunta INCORRECTA (cuenta como 0)
+```
+
+### Fórmula por Tag (Competencia, Componente, Tipo de Texto, Parte)
+
+```
+Puntaje(tag) = (Preguntas correctas con ese tag / Total preguntas con ese tag) × 100
+```
+
+### Fórmula por Área
+
+```
+Puntaje(área) = (Preguntas correctas del área / Total preguntas del área) × 100
 ```
 
 ### Ejemplo: Componente "Químico"
 
-**Sesión 1:**
-- Q1: 0.334 / 0.334 (tag: Químico)
-- Q4: 0 / 0.334 (tag: Químico)
-- Subtotal: 0.334 / 0.668
+**Sesión 1 (2 preguntas de Químico):**
+- Q1: EarnedPoints = 0.334 → ✓ Correcta
+- Q4: EarnedPoints = 0 → ✗ Incorrecta
+- Subtotal: 1 correcta / 2 total
 
-**Sesión 2:**
-- Q2: 0.334 / 0.334 (tag: Químico)
-- Q5: 0.334 / 0.334 (tag: Químico)
-- Q8: 0 / 0.334 (tag: Químico)
-- ... (7 más)
-- Subtotal: 2.338 / 3.340
+**Sesión 2 (10 preguntas de Químico):**
+- Q2: ✓ Correcta
+- Q5: ✓ Correcta
+- Q8: ✗ Incorrecta
+- ... (7 más: 5 correctas, 2 incorrectas)
+- Subtotal: 7 correctas / 10 total
 
-**Cálculo CORRECTO:**
+**Cálculo CORRECTO (combinando sesiones):**
 ```
-Químico = (0.334 + 2.338) / (0.668 + 3.340) × 100 = 66.7%
+Químico = (1 + 7) / (2 + 10) × 100 = 8/12 × 100 = 66.7%
 ```
 
-### Puntaje por Área
+### Fórmula del Puntaje Global (OBLIGATORIA)
 
-El área se calcula igual, sumando todos los puntos de preguntas que tienen el tag del área:
+El puntaje global se calcula con la misma fórmula del MVP, usando los puntajes por área (0-100):
+
+```php
+global_score = round(((lectura + matematicas + sociales + naturales) * 3 + ingles) / 13 * 5)
+```
+
+Donde:
+- `lectura` = Puntaje del área Lectura (0-100)
+- `matematicas` = Puntaje del área Matemáticas (0-100)
+- `sociales` = Puntaje del área Sociales (0-100)
+- `naturales` = Puntaje del área Ciencias/Naturales (0-100)
+- `ingles` = Puntaje del área Inglés (0-100)
+
+**Resultado:** Puntaje global de 0 a 500 (escala ICFES)
+
+### Ejemplo Completo de un Estudiante
+
+| Área | Correctas | Total | Puntaje |
+|------|-----------|-------|---------|
+| Lectura | 28 | 41 | 68.3 |
+| Matemáticas | 25 | 50 | 50.0 |
+| Sociales | 30 | 45 | 66.7 |
+| Naturales | 35 | 58 | 60.3 |
+| Inglés | 40 | 66 | 60.6 |
 
 ```
-Ciencias = Σ(earned de todas las Q con tag "Ciencias") / Σ(possible) × 100
+Global = round(((68.3 + 50.0 + 66.7 + 60.3) * 3 + 60.6) / 13 * 5)
+Global = round((245.3 * 3 + 60.6) / 13 * 5)
+Global = round((735.9 + 60.6) / 13 * 5)
+Global = round(796.5 / 13 * 5)
+Global = round(61.27 * 5)
+Global = round(306.3)
+Global = 306
 ```
 
 ---
