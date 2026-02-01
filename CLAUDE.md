@@ -929,22 +929,24 @@ Schema::create('student_answers', function (Blueprint $table) {
 | A | Tag | Nombre del tag (área, competencia, componente) |
 | B | StudentFirstName | Nombre del estudiante |
 | C | StudentLastName | Apellido del estudiante |
-| D | StudentID | ID interno de Zipgrade |
-| E | StudentExt | **Documento de identidad** (External Id) |
+| D | StudentID | **Documento de identidad** (el docente ingresa el documento aquí) |
+| E | StudentExt | No usado |
 | F | QuizName | Nombre del quiz |
 | G | TagType | Siempre "question" |
 | H | QuestionNum | Número de pregunta |
 | I | EarnedPoints | Puntos obtenidos (0 o 0.334) |
 | J | PossiblePoints | Puntos posibles (0.334) |
 
+**IMPORTANTE:** El campo `StudentID` de Zipgrade contendrá el documento de identidad del estudiante (solo números). Este es el campo que se usará para hacer match con `document_id` en la tabla `students`.
+
 ### Ejemplo de Datos
 
 ```
-Tag                    | StudentFirstName | StudentLastName | StudentID | StudentExt | QuizName        | TagType  | QuestionNum | EarnedPoints | PossiblePoints
-Ciencias               | SALOMÉ           | ACEVEDO OCAMPO  | 44216     | 1234567890 | La materia Q11  | question | 1           | 0,334        | 0,334
-Uso comprensivo...     | SALOMÉ           | ACEVEDO OCAMPO  | 44216     | 1234567890 | La materia Q11  | question | 1           | 0,334        | 0,334
-Químico                | SALOMÉ           | ACEVEDO OCAMPO  | 44216     | 1234567890 | La materia Q11  | question | 1           | 0,334        | 0,334
-Ciencias               | SALOMÉ           | ACEVEDO OCAMPO  | 44216     | 1234567890 | La materia Q11  | question | 2           | 0            | 0,334
+Tag                    | StudentFirstName | StudentLastName | StudentID  | StudentExt | QuizName        | TagType  | QuestionNum | EarnedPoints | PossiblePoints
+Ciencias               | SALOMÉ           | ACEVEDO OCAMPO  | 1234567890 |            | La materia Q11  | question | 1           | 0,334        | 0,334
+Uso comprensivo...     | SALOMÉ           | ACEVEDO OCAMPO  | 1234567890 |            | La materia Q11  | question | 1           | 0,334        | 0,334
+Químico                | SALOMÉ           | ACEVEDO OCAMPO  | 1234567890 |            | La materia Q11  | question | 1           | 0,334        | 0,334
+Ciencias               | SALOMÉ           | ACEVEDO OCAMPO  | 1234567890 |            | La materia Q11  | question | 2           | 0            | 0,334
 ...
 ```
 
