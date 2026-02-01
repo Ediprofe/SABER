@@ -1237,6 +1237,68 @@ class ZipgradeMetricsService
 
 ---
 
+## 📺 Vista de Resultados (Prototipo)
+
+### Especificación: Tabla Simple en Filament
+
+El prototipo muestra los resultados en una **tabla simple** dentro del panel Filament (NO genera reporte HTML aún).
+
+**Ubicación:** Acción "Ver Resultados" en ExamResource o página dedicada.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  Resultados Zipgrade - Simulacro ICFES Marzo 2025                              │
+│  Sesiones importadas: 2 | Estudiantes: 100 | Preguntas: 260                    │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  [Filtro: Grupo ▼] [Filtro: Solo PIAR ☐]                     [Exportar CSV]   │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  Documento   │ Nombre              │ Grupo │ PIAR │ Lect  │ Mat   │ Soc   │ Nat   │ Ing   │ Global │
+│  ────────────┼─────────────────────┼───────┼──────┼───────┼───────┼───────┼───────┼───────┼────────│
+│  1234567890  │ SALOMÉ ACEVEDO      │ 11-1  │ NO   │ 68.29 │ 50.00 │ 66.67 │ 60.34 │ 60.61 │  306   │
+│  1234567891  │ JUAN PÉREZ GÓMEZ    │ 11-1  │ SI   │ 72.14 │ 55.20 │ 70.00 │ 65.10 │ 58.33 │  320   │
+│  1234567892  │ MARÍA LÓPEZ RUIZ    │ 11-2  │ NO   │ 80.00 │ 62.50 │ 75.00 │ 70.00 │ 65.00 │  352   │
+│  ...         │                     │       │      │       │       │       │       │       │        │
+│                                                                                 │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  RESUMEN:                                                                       │
+│  • Promedio Global: 312.5 | Desv. Estándar: 45.2                               │
+│  • Promedio PIAR: 295.3 | Promedio No-PIAR: 318.7                              │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Columnas de la Tabla
+
+| Columna | Tipo | Ordenable | Descripción |
+|---------|------|-----------|-------------|
+| Documento | string | ✅ | document_id del estudiante |
+| Nombre | string | ✅ | Nombre completo |
+| Grupo | string | ✅ | Grupo de la matrícula |
+| PIAR | badge | ❌ | SI/NO |
+| Lectura | number | ✅ | Puntaje 0-100 |
+| Matemáticas | number | ✅ | Puntaje 0-100 |
+| Sociales | number | ✅ | Puntaje 0-100 |
+| Naturales | number | ✅ | Puntaje 0-100 |
+| Inglés | number | ✅ | Puntaje 0-100 |
+| Global | number | ✅ | Puntaje 0-500 |
+
+### Funcionalidades
+
+- **Filtro por grupo:** Dropdown para seleccionar grupo específico
+- **Filtro PIAR:** Toggle para mostrar solo estudiantes PIAR
+- **Ordenamiento:** Click en encabezado de columna
+- **Exportar CSV:** Descargar tabla como archivo CSV
+- **Resumen:** Promedios y desviación estándar al pie de la tabla
+
+### Fuera del Prototipo (Para Después)
+
+- ❌ Reporte HTML descargable
+- ❌ Gráficos
+- ❌ Desglose por competencia/componente en la vista
+- ❌ Top performers
+
+---
+
 ## 📦 Entregables del Prototipo
 
 | # | Entregable | Ubicación | Prioridad |
