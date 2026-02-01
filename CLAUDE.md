@@ -147,8 +147,8 @@ Cada área tiene su propia estructura de análisis detallado:
 - Componentes: Historia, Geografía, Ético-político
 
 **Lectura Crítica:**
-- Competencias: Identificar y entender, Reflexionar y evaluar, Comprender cómo se articulan
-- Tipos de texto: Continuo, Discontinuo, Mixto
+- Competencias: Identificar y ubicar, Relacionar e interpretar, Evaluar y reflexionar
+- Tipos de texto: Continuo, Discontinuo, Literario, Informativo, Filosófico
 
 **Inglés:**
 - Partes: Parte 1, Parte 2, Parte 3, Parte 4, Parte 5, Parte 6, Parte 7
