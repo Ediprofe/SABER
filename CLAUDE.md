@@ -672,7 +672,8 @@ class DetailAreaStatistics {
 |---------|--------|-------|------|
 | Feature 1: MVP Base | ✅ Completado | 2026-01-29 | main |
 | Feature 2: Análisis Detallado | ✅ Completado | 2026-01-30 | main |
-| Feature 3: Importación Zipgrade | 🔄 En desarrollo | 2026-02-01 | feature/zipgrade-prototype |
+| Feature 3: Importación Zipgrade - Fase 1 (Importación) | ✅ Completado | 2026-02-01 | feature/zipgrade-prototype |
+| Feature 3: Importación Zipgrade - Fase 2 (Exportaciones) | 🔄 En desarrollo | 2026-02-01 | feature/zipgrade-prototype |
 
 ---
 
@@ -1290,58 +1291,301 @@ El prototipo muestra los resultados en una **tabla simple** dentro del panel Fil
 - **Exportar CSV:** Descargar tabla como archivo CSV
 - **Resumen:** Promedios y desviación estándar al pie de la tabla
 
-### Fuera del Prototipo (Para Después)
+---
 
-- ❌ Reporte HTML descargable
-- ❌ Gráficos
-- ❌ Desglose por competencia/componente en la vista
-- ❌ Top performers
+## 📤 Exportaciones de Resultados
+
+### Requerimiento 1: Exportar Excel Completo
+
+Generar un archivo Excel descargable con los **mismos datos** que se muestran en la tabla de resultados Zipgrade.
+
+**Archivo:** `resultados_zipgrade_{exam_name}_{fecha}.xlsx`
+
+**Hoja 1: "Resultados Completos"**
+
+| Columna | Campo | Descripción |
+|---------|-------|-------------|
+| A | Documento | document_id del estudiante |
+| B | Nombre | Nombre completo (first_name + last_name) |
+| C | Grupo | Grupo de la matrícula |
+| D | PIAR | "SI" o "NO" |
+| E | Lectura | Puntaje 0-100 (2 decimales) |
+| F | Matemáticas | Puntaje 0-100 (2 decimales) |
+| G | Sociales | Puntaje 0-100 (2 decimales) |
+| H | Naturales | Puntaje 0-100 (2 decimales) |
+| I | Inglés | Puntaje 0-100 (2 decimales) |
+| J | Global | Puntaje 0-500 (entero) |
+
+**Hoja 2: "Resultados Anonimizados"**
+
+Mismos datos pero **SIN** las columnas Nombre, Grupo y PIAR:
+
+| Columna | Campo | Descripción |
+|---------|-------|-------------|
+| A | Documento | document_id del estudiante |
+| B | Lectura | Puntaje 0-100 (2 decimales) |
+| C | Matemáticas | Puntaje 0-100 (2 decimales) |
+| D | Sociales | Puntaje 0-100 (2 decimales) |
+| E | Naturales | Puntaje 0-100 (2 decimales) |
+| F | Inglés | Puntaje 0-100 (2 decimales) |
+| G | Global | Puntaje 0-500 (entero) |
+
+**Ubicación del botón:** En la página de resultados Zipgrade, junto a los filtros.
+
+---
+
+### Requerimiento 2: Exportar PDF Anonimizado
+
+Generar un archivo PDF con los resultados **SIN** los campos Nombre, Grupo y PIAR.
+
+**Archivo:** `resultados_zipgrade_{exam_name}_{fecha}.pdf`
+
+**Contenido del PDF:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  RESULTADOS ZIPGRADE                                                │
+│  Examen: [Nombre del examen]                                        │
+│  Fecha: [Fecha del examen]                                          │
+│  Generado: [Fecha y hora de generación]                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Documento   │ Lectura │ Matemát. │ Sociales │ Natural. │ Inglés │ Global │
+│  ────────────┼─────────┼──────────┼──────────┼──────────┼────────┼────────│
+│  1234567890  │  68.29  │   50.00  │   66.67  │   60.34  │  60.61 │   306  │
+│  1234567891  │  72.14  │   55.20  │   70.00  │   65.10  │  58.33 │   320  │
+│  1234567892  │  80.00  │   62.50  │   75.00  │   70.00  │  65.00 │   352  │
+│  ...         │         │          │          │          │        │        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Características del PDF:**
+- Orientación: Horizontal (landscape)
+- Tamaño: Carta
+- Tabla paginada si hay muchos estudiantes
+- Incluir encabezado con nombre del examen en cada página
+- **SIN resumen estadístico** (solo la tabla de datos)
+
+**Ubicación del botón:** En la página de resultados Zipgrade, junto al botón de Excel.
+
+---
+
+### Requerimiento 3: Reporte HTML Completo
+
+Generar el **mismo reporte HTML** que se genera en Features 1 y 2, pero usando los datos calculados desde Zipgrade.
+
+**Archivo:** `informe_{exam_name}_{fecha}.html`
+
+**El reporte debe incluir TODAS las secciones existentes:**
+
+1. **SECCIÓN 1: KPIs PRINCIPALES**
+   - Total estudiantes
+   - Promedio global
+   - Desviación estándar
+   - Estudiantes sobre 300 puntos
+
+2. **SECCIÓN 2: LISTADO DE ESTUDIANTES**
+   - Tabla con todos los estudiantes
+   - Columnas: Documento, Nombre, Grupo, PIAR, Lectura, Matemáticas, Sociales, Naturales, Inglés, Global
+   - Ordenable por cualquier columna
+   - Filtrable por grupo y PIAR
+
+3. **SECCIÓN 3: ESTADÍSTICAS POR ÁREA**
+   - Promedio, Desv. Estándar, Mín, Máx por cada área
+   - Comparativo PIAR vs No-PIAR
+
+4. **SECCIÓN 4: TOP PERFORMERS**
+   - Top 10 estudiantes por puntaje global
+   - Top 3 por cada área
+
+5. **SECCIÓN 5: GRÁFICOS GENERALES**
+   - Distribución de puntajes globales (histograma)
+   - Promedios por área (barras)
+   - Comparativo por grupo (barras agrupadas)
+   - Comparativo PIAR vs No-PIAR (barras agrupadas)
+
+**Características del HTML:**
+- 100% autocontenido (offline)
+- Alpine.js y Chart.js embebidos
+- Interactivo (filtros, ordenamiento, tabs)
+- Estilo consistente con reportes de Features 1 y 2
+
+**IMPORTANTE:** Reutilizar la vista Blade existente `resources/views/reports/exam.blade.php` y el servicio `ReportGenerator`. Adaptar para que funcione con datos de Zipgrade.
+
+**Ubicación del botón:** En la página de resultados Zipgrade, como botón principal "Generar Informe HTML".
+
+---
+
+### Interfaz de Exportaciones
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  Resultados Zipgrade - Simulacro ICFES Marzo 2025                              │
+│  Sesiones importadas: 2 | Estudiantes: 100 | Preguntas: 260                    │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  [Filtro: Grupo ▼] [Solo PIAR ☐]     [Excel] [PDF] [Informe HTML]             │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  Documento   │ Nombre              │ Grupo │ PIAR │ Lect  │ Mat   │ ...        │
+│  ────────────┼─────────────────────┼───────┼──────┼───────┼───────┼────────    │
+│  ...                                                                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Botones de exportación:**
+
+| Botón | Icono | Acción |
+|-------|-------|--------|
+| Excel | 📊 | Descarga `resultados_zipgrade_{exam}_{fecha}.xlsx` (2 hojas) |
+| PDF | 📄 | Descarga `resultados_zipgrade_{exam}_{fecha}.pdf` (anonimizado) |
+| Informe HTML | 📈 | Descarga `informe_{exam}_{fecha}.html` (reporte completo) |
 
 ---
 
 ## 📦 Entregables del Prototipo
 
+### Fase 1: Importación y Vista (COMPLETADO ✅)
+
+| # | Entregable | Ubicación | Estado |
+|---|------------|-----------|--------|
+| 1 | Migración: `document_id` en students | `database/migrations/` | ✅ |
+| 2 | Migración: `tag_hierarchy` | `database/migrations/` | ✅ |
+| 3 | Migración: `exam_sessions` | `database/migrations/` | ✅ |
+| 4 | Migración: `zipgrade_imports` | `database/migrations/` | ✅ |
+| 5 | Migración: `exam_questions` | `database/migrations/` | ✅ |
+| 6 | Migración: `question_tags` | `database/migrations/` | ✅ |
+| 7 | Migración: `student_answers` | `database/migrations/` | ✅ |
+| 8 | Modelo `TagHierarchy` | `app/Models/` | ✅ |
+| 9 | Modelo `ExamSession` | `app/Models/` | ✅ |
+| 10 | Modelo `ZipgradeImport` | `app/Models/` | ✅ |
+| 11 | Modelo `ExamQuestion` | `app/Models/` | ✅ |
+| 12 | Modelo `QuestionTag` | `app/Models/` | ✅ |
+| 13 | Modelo `StudentAnswer` | `app/Models/` | ✅ |
+| 14 | Import `ZipgradeTagsImport` | `app/Imports/` | ✅ |
+| 15 | Service `ZipgradeMetricsService` | `app/Services/` | ✅ |
+| 16 | Resource `TagHierarchyResource` | `app/Filament/Resources/` | ✅ |
+| 17 | Action `ImportZipgradeAction` | `app/Filament/Actions/` | ✅ |
+| 18 | Vista de resultados (tabla simple) | Página Filament | ✅ |
+| 19 | Seeder con datos de prueba | `database/seeders/` | ✅ |
+
+### Fase 2: Exportaciones (PENDIENTE)
+
 | # | Entregable | Ubicación | Prioridad |
 |---|------------|-----------|-----------|
-| 1 | Migración: `document_id` en students | `database/migrations/` | ✅ Alta |
-| 2 | Migración: `tag_hierarchy` | `database/migrations/` | ✅ Alta |
-| 3 | Migración: `exam_sessions` | `database/migrations/` | ✅ Alta |
-| 4 | Migración: `zipgrade_imports` | `database/migrations/` | ✅ Alta |
-| 5 | Migración: `exam_questions` | `database/migrations/` | ✅ Alta |
-| 6 | Migración: `question_tags` | `database/migrations/` | ✅ Alta |
-| 7 | Migración: `student_answers` | `database/migrations/` | ✅ Alta |
-| 8 | Modelo `TagHierarchy` | `app/Models/` | ✅ Alta |
-| 9 | Modelo `ExamSession` | `app/Models/` | ✅ Alta |
-| 10 | Modelo `ZipgradeImport` | `app/Models/` | ✅ Alta |
-| 11 | Modelo `ExamQuestion` | `app/Models/` | ✅ Alta |
-| 12 | Modelo `QuestionTag` | `app/Models/` | ✅ Alta |
-| 13 | Modelo `StudentAnswer` | `app/Models/` | ✅ Alta |
-| 14 | Import `ZipgradeTagsImport` | `app/Imports/` | ✅ Alta |
-| 15 | Service `ZipgradeMetricsService` | `app/Services/` | ✅ Alta |
-| 16 | Resource `TagHierarchyResource` | `app/Filament/Resources/` | ✅ Alta |
-| 17 | Action `ImportZipgradeAction` | `app/Filament/Actions/` | ✅ Alta |
-| 18 | Vista de resultados (tabla simple) | `resources/views/` | ✅ Alta |
-| 19 | Seeder con datos de prueba | `database/seeders/` | 🟡 Media |
-| 20 | Reporte HTML completo | `resources/views/reports/` | ❌ Fuera de prototipo |
+| 20 | Export `ZipgradeResultsExport` | `app/Exports/ZipgradeResultsExport.php` | ✅ Alta |
+| 21 | Hoja Excel "Resultados Completos" | (dentro del Export) | ✅ Alta |
+| 22 | Hoja Excel "Resultados Anonimizados" | (dentro del Export) | ✅ Alta |
+| 23 | Service `ZipgradePdfService` | `app/Services/ZipgradePdfService.php` | ✅ Alta |
+| 24 | Vista PDF anonimizado | `resources/views/exports/zipgrade-pdf.blade.php` | ✅ Alta |
+| 25 | Adaptación `ReportGenerator` para Zipgrade | `app/Services/ReportGenerator.php` | ✅ Alta |
+| 26 | Vista HTML reporte Zipgrade | `resources/views/reports/zipgrade-exam.blade.php` | ✅ Alta |
+| 27 | Action `ExportZipgradeExcelAction` | Botón en página resultados | ✅ Alta |
+| 28 | Action `ExportZipgradePdfAction` | Botón en página resultados | ✅ Alta |
+| 29 | Action `GenerateZipgradeHtmlReportAction` | Botón en página resultados | ✅ Alta |
+
+### Especificaciones Técnicas de Exportaciones
+
+#### Export Excel (Maatwebsite/Laravel-Excel)
+
+```php
+// app/Exports/ZipgradeResultsExport.php
+class ZipgradeResultsExport implements WithMultipleSheets
+{
+    public function __construct(
+        private Exam $exam,
+        private ?string $groupFilter = null,
+        private ?bool $piarFilter = null
+    ) {}
+
+    public function sheets(): array
+    {
+        return [
+            'Resultados Completos' => new CompleteResultsSheet($this->exam, $this->groupFilter, $this->piarFilter),
+            'Resultados Anonimizados' => new AnonymizedResultsSheet($this->exam, $this->groupFilter, $this->piarFilter),
+        ];
+    }
+}
+```
+
+#### PDF (DomPDF o similar)
+
+```php
+// app/Services/ZipgradePdfService.php
+class ZipgradePdfService
+{
+    public function generate(Exam $exam, ?array $filters = null): string
+    {
+        $results = $this->zipgradeMetrics->getExamResults($exam, $filters);
+
+        $pdf = Pdf::loadView('exports.zipgrade-pdf', [
+            'exam' => $exam,
+            'results' => $results,
+            // Solo datos anonimizados, SIN estadísticas
+        ]);
+
+        return $pdf->output();
+    }
+}
+```
+
+#### Reporte HTML (Reutilizar ReportGenerator)
+
+```php
+// Adaptar el ReportGenerator existente o crear ZipgradeReportGenerator
+class ZipgradeReportGenerator
+{
+    public function generate(Exam $exam): string
+    {
+        // Obtener datos desde ZipgradeMetricsService
+        $results = $this->zipgradeMetrics->getExamResults($exam);
+        $statistics = $this->zipgradeMetrics->getExamStatistics($exam);
+        $topPerformers = $this->zipgradeMetrics->getTopPerformers($exam);
+
+        // Renderizar vista (reutilizar estructura de exam.blade.php)
+        return view('reports.zipgrade-exam', [
+            'exam' => $exam,
+            'results' => $results,
+            'statistics' => $statistics,
+            'topPerformers' => $topPerformers,
+            // ... otros datos necesarios
+        ])->render();
+    }
+}
+```
 
 ---
 
 ## ✅ Criterios de Aceptación del Prototipo
 
-### Definition of Done
+### Definition of Done - Fase 1: Importación (COMPLETADO ✅)
 
-- [ ] Puedo agregar `document_id` a estudiantes existentes
-- [ ] Puedo configurar la jerarquía de tags (CRUD en Filament)
-- [ ] Puedo crear un examen con 1 o 2 sesiones
-- [ ] Puedo importar un Excel de Zipgrade (formato tags)
-- [ ] El sistema detecta tags nuevos y pide clasificación
-- [ ] El sistema infiere el área si falta pero hay tag hijo conocido
-- [ ] El sistema hace match de estudiantes por documento
-- [ ] El sistema calcula puntajes correctamente (ponderados por # preguntas)
-- [ ] Puedo ver los resultados calculados en una tabla simple
-- [ ] Las 2 sesiones se combinan correctamente en los cálculos
+- [x] Puedo agregar `document_id` a estudiantes existentes
+- [x] Puedo configurar la jerarquía de tags (CRUD en Filament)
+- [x] Puedo crear un examen con 1 o 2 sesiones
+- [x] Puedo importar un Excel de Zipgrade (formato tags)
+- [x] El sistema detecta tags nuevos y pide clasificación
+- [x] El sistema infiere el área si falta pero hay tag hijo conocido
+- [x] El sistema hace match de estudiantes por documento
+- [x] El sistema calcula puntajes correctamente (ponderados por # preguntas)
+- [x] Puedo ver los resultados calculados en una tabla simple
+- [x] Las 2 sesiones se combinan correctamente en los cálculos
 
-### Casos de Prueba Obligatorios
+### Definition of Done - Fase 2: Exportaciones (PENDIENTE)
+
+- [ ] Puedo descargar un Excel con 2 hojas (completo y anonimizado)
+- [ ] La hoja "Resultados Completos" tiene: Documento, Nombre, Grupo, PIAR, Lectura, Matemáticas, Sociales, Naturales, Inglés, Global
+- [ ] La hoja "Resultados Anonimizados" tiene: Documento, Lectura, Matemáticas, Sociales, Naturales, Inglés, Global (SIN Nombre, Grupo, PIAR)
+- [ ] Puedo descargar un PDF anonimizado (solo Documento y puntajes, SIN Nombre, Grupo, PIAR)
+- [ ] El PDF incluye encabezado con nombre del examen y fecha
+- [ ] El PDF NO incluye resumen estadístico (solo la tabla de datos)
+- [ ] Puedo descargar un reporte HTML completo igual al de Features 1 y 2
+- [ ] El HTML incluye todas las secciones: KPIs, listado, estadísticas, top performers, gráficos
+- [ ] El HTML es 100% offline (Alpine.js y Chart.js embebidos)
+- [ ] Los 3 botones de exportación están visibles en la página de resultados Zipgrade
+- [ ] Los filtros (grupo, PIAR) se aplican a las exportaciones
+
+### Casos de Prueba Obligatorios - Fase 1
 
 1. **Importar sesión única:** 100 estudiantes, 120 preguntas
 2. **Importar dos sesiones:** Combinación correcta de puntajes
@@ -1349,6 +1593,16 @@ El prototipo muestra los resultados en una **tabla simple** dentro del panel Fil
 4. **Tag completamente nuevo:** Sistema pide clasificación
 5. **Estudiante sin match:** Sistema permite crear o vincular
 6. **Cálculo ponderado:** Verificar que 2 preguntas + 10 preguntas = 12 preguntas (no 50%-50%)
+
+### Casos de Prueba Obligatorios - Fase 2
+
+1. **Excel completo:** Verificar que la hoja 1 tiene todas las columnas incluyendo Nombre, Grupo, PIAR
+2. **Excel anonimizado:** Verificar que la hoja 2 NO tiene Nombre, Grupo, PIAR
+3. **PDF anonimizado:** Verificar que el PDF NO tiene Nombre, Grupo, PIAR
+4. **PDF paginado:** Con 100+ estudiantes, verificar paginación correcta
+5. **HTML offline:** Descargar y abrir sin internet, verificar que funciona
+6. **HTML con filtros:** Aplicar filtro de grupo, generar HTML, verificar que solo incluye ese grupo
+7. **Consistencia de datos:** Los 3 formatos deben mostrar los mismos puntajes para el mismo estudiante
 
 ---
 
@@ -1367,12 +1621,41 @@ El prototipo muestra los resultados en una **tabla simple** dentro del panel Fil
 
 5. **UI en español:** Todos los labels en español colombiano.
 
+6. **Exportaciones:**
+   - **Excel:** Usar `Maatwebsite/Laravel-Excel` con `WithMultipleSheets` para las 2 hojas
+   - **PDF:** Usar `barryvdh/laravel-dompdf` o similar, orientación landscape
+   - **HTML:** Reutilizar la estructura de `resources/views/reports/exam.blade.php` de Features 1/2, embebiendo Alpine.js y Chart.js
+
+7. **Nombres de archivos de exportación:**
+   - Excel: `resultados_zipgrade_{exam_slug}_{YYYY-MM-DD}.xlsx`
+   - PDF: `resultados_zipgrade_{exam_slug}_{YYYY-MM-DD}.pdf`
+   - HTML: `informe_{exam_slug}_{YYYY-MM-DD}.html`
+
 ---
 
 ## 📝 Notas para el Agente Implementador
 
+### Fase 1 (COMPLETADA)
 1. **Rama:** Trabajar en `feature/zipgrade-prototype`
 2. **BD:** Crear migraciones nuevas, NO modificar las existentes de Feature 1/2
 3. **Modelos:** Crear modelos nuevos, NO modificar Student (solo agregar `document_id`)
 4. **Servicios:** Crear `ZipgradeMetricsService` SEPARADO de `MetricsService`
-5. **Actualizar CHANGELOG.md** mientras avanzas
+
+### Fase 2 (PENDIENTE - Exportaciones)
+1. **Continuar en rama:** `feature/zipgrade-prototype`
+2. **Excel:** Crear `app/Exports/ZipgradeResultsExport.php` con 2 sheets
+3. **PDF:**
+   - Instalar `barryvdh/laravel-dompdf` si no está
+   - Crear vista `resources/views/exports/zipgrade-pdf.blade.php`
+   - Crear servicio `app/Services/ZipgradePdfService.php`
+4. **HTML:**
+   - Analizar `resources/views/reports/exam.blade.php` existente
+   - Crear `app/Services/ZipgradeReportGenerator.php` (o extender el existente)
+   - Crear vista `resources/views/reports/zipgrade-exam.blade.php` si es necesario diferenciarlo
+5. **Botones en UI:** Agregar los 3 botones de exportación en la página de resultados Zipgrade
+6. **Actualizar CHANGELOG.md** mientras avanzas
+
+### Orden de Implementación Sugerido
+1. Primero el Excel (más simple, ya se usa Maatwebsite)
+2. Luego el PDF (requiere vista nueva)
+3. Finalmente el HTML (requiere análisis del ReportGenerator existente)
