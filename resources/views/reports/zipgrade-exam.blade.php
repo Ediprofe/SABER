@@ -69,16 +69,7 @@
         .chart-container { background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
         .chart-title { font-size: 16px; font-weight: 600; color: #374151; margin-bottom: 16px; text-align: center; }
         .chart-wrapper { position: relative; height: 300px; }
-        
-        /* Stats tables */
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
-        .stats-table { width: 100%; }
-        .stats-table th { background: #eff6ff; color: #1e40af; }
-        .stats-table .area-lectura { border-left: 3px solid #3b82f6; }
-        .stats-table .area-matematicas { border-left: 3px solid #ef4444; }
-        .stats-table .area-sociales { border-left: 3px solid #f59e0b; }
-        .stats-table .area-naturales { border-left: 3px solid #10b981; }
-        .stats-table .area-ingles { border-left: 3px solid #8b5cf6; }
+        .group-charts-wrapper { display: flex; flex-direction: column; gap: 40px; }
         
         /* Top performers */
         .top-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
@@ -93,11 +84,6 @@
         .top-rank.bronze { background: #fed7aa; color: #9a3412; }
         .top-name { flex: 1; margin-left: 12px; font-size: 14px; }
         .top-score { font-weight: 600; color: #1e40af; }
-        
-        /* Comparison */
-        .comparison-table th { background: #f0fdf4; color: #166534; }
-        .comparison-table .piar-row { background: #fef3c7; }
-        .comparison-table .non-piar-row { background: #eff6ff; }
         
         /* Footer */
         .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; margin-top: 40px; }
@@ -119,11 +105,8 @@
             .input { width: 100%; }
             .chart-grid { grid-template-columns: 1fr; }
             .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .group-charts-wrapper { grid-template-columns: 1fr; }
         }
-        
-        /* Loading */
-        .loading { display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -261,87 +244,6 @@
             </div>
         </div>
 
-        <!-- Statistics by Area -->
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Estadísticas por Área</h2>
-            </div>
-            <div class="table-container">
-                <table class="stats-table">
-                    <thead>
-                        <tr>
-                            <th>Área</th>
-                            <th>Promedio</th>
-                            <th>Desv. Estándar</th>
-                            <th>Mínimo</th>
-                            <th>Máximo</th>
-                            <th>Evaluados</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($statistics->areaStatistics as $areaStat)
-                        <tr class="area-{{ strtolower($areaStat->area) }}">
-                            <td><strong>{{ $areaStat->area }}</strong></td>
-                            <td>{{ number_format($areaStat->average, 2) }}</td>
-                            <td>{{ number_format($areaStat->stdDev, 2) }}</td>
-                            <td>{{ number_format($areaStat->min, 2) }}</td>
-                            <td>{{ number_format($areaStat->max, 2) }}</td>
-                            <td>{{ $areaStat->count }}</td>
-                        </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- PIAR Comparison -->
-        @if(isset($piarComparison['piar']) || isset($piarComparison['non_piar']))
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Comparativo PIAR vs No PIAR</h2>
-            </div>
-            <div class="table-container">
-                <table class="stats-table comparison-table">
-                    <thead>
-                        <tr>
-                            <th>Población</th>
-                            <th>Cantidad</th>
-                            <th>Promedios por Área</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if(isset($piarComparison['non_piar']))
-                        <tr class="non-piar-row">
-                            <td><strong>Sin PIAR</strong></td>
-                            <td>{{ $piarComparison['non_piar_count'] }}</td>
-                            <td>
-                                Lectura: {{ number_format($piarComparison['non_piar']['lectura']->average ?? 0, 2) }} | 
-                                Mat: {{ number_format($piarComparison['non_piar']['matematicas']->average ?? 0, 2) }} | 
-                                Soc: {{ number_format($piarComparison['non_piar']['sociales']->average ?? 0, 2) }} | 
-                                Nat: {{ number_format($piarComparison['non_piar']['naturales']->average ?? 0, 2) }} | 
-                                Ing: {{ number_format($piarComparison['non_piar']['ingles']->average ?? 0, 2) }}
-                            </td>
-                        </tr>
-                        @endif
-                        @if(isset($piarComparison['piar']))
-                        <tr class="piar-row">
-                            <td><strong>PIAR</strong></td>
-                            <td>{{ $piarComparison['piar_count'] }}</td>
-                            <td>
-                                Lectura: {{ number_format($piarComparison['piar']['lectura']->average ?? 0, 2) }} | 
-                                Mat: {{ number_format($piarComparison['piar']['matematicas']->average ?? 0, 2) }} | 
-                                Soc: {{ number_format($piarComparison['piar']['sociales']->average ?? 0, 2) }} | 
-                                Nat: {{ number_format($piarComparison['piar']['naturales']->average ?? 0, 2) }} | 
-                                Ing: {{ number_format($piarComparison['piar']['ingles']->average ?? 0, 2) }}
-                            </td>
-                        </tr>
-                        @endif
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        @endif
-
         <!-- Top Performers -->
         <div class="card">
             <div class="card-header">
@@ -371,38 +273,30 @@
                 <h2 class="card-title">Gráficos y Visualizaciones</h2>
             </div>
             <div class="chart-grid">
-                <!-- Promedios por área -->
+                <!-- Promedios por área (CON PIAR vs SIN PIAR) -->
+                @if(isset($piarComparison['piar']) && isset($piarComparison['non_piar']))
                 <div class="chart-container">
-                    <div class="chart-title">Promedios por Área</div>
+                    <div class="chart-title">Promedios por Área (CON PIAR vs SIN PIAR)</div>
                     <div class="chart-wrapper">
                         <canvas id="chartAverages"></canvas>
                     </div>
                 </div>
-                
-                <!-- Desviación estándar -->
+
+                <!-- Desviación estándar (CON PIAR vs SIN PIAR) -->
                 <div class="chart-container">
-                    <div class="chart-title">Desviación Estándar por Área</div>
+                    <div class="chart-title">Desviación Estándar por Área (CON PIAR vs SIN PIAR)</div>
                     <div class="chart-wrapper">
                         <canvas id="chartStdDev"></canvas>
                     </div>
                 </div>
+                @endif
                 
                 <!-- Promedios por grupo -->
                 @if(!empty($groupComparison))
                 <div class="chart-container">
-                    <div class="chart-title">Promedios por Grupo</div>
-                    <div class="chart-wrapper">
-                        <canvas id="chartGroups"></canvas>
-                    </div>
-                </div>
-                @endif
-                
-                <!-- Comparativo PIAR -->
-                @if(isset($piarComparison['piar']) && isset($piarComparison['non_piar']))
-                <div class="chart-container">
-                    <div class="chart-title">Comparativo PIAR vs No PIAR</div>
-                    <div class="chart-wrapper">
-                        <canvas id="chartPiar"></canvas>
+                    <div class="chart-title">Promedios por Grupo (CON PIAR vs SIN PIAR)</div>
+                    <div class="group-charts-wrapper" id="groupChartsContainer">
+                        <!-- Canvas generados dinámicamente -->
                     </div>
                 </div>
                 @endif
@@ -562,7 +456,7 @@
                 anchor: 'end',
                 align: 'top',
                 formatter: Math.round,
-                font: { weight: 'bold', size: 11 },
+                font: { weight: 'bold', size: 10 },
                 color: '#374151'
             };
             
@@ -574,148 +468,48 @@
                 'Inglés': '#8b5cf6',
                 'Global': '#6366f1'
             };
+
+            // Mapeo
+            const allAreas = ['Lectura', 'Matemáticas', 'Sociales', 'Naturales', 'Inglés'];
+            const areaKeyMap = {
+                'Lectura': 'lectura',
+                'Matemáticas': 'matematicas',
+                'Sociales': 'sociales',
+                'Naturales': 'naturales',
+                'Inglés': 'ingles'
+            };
             
-            // 1. Promedios por área
+            // 1. Promedios por área (Comparativo PIAR)
             const avgCtx = document.getElementById('chartAverages');
-            if (avgCtx && reportData.areaStatistics) {
-                const areas = reportData.areaStatistics.map(s => s.area);
-                const avgs = reportData.areaStatistics.map(s => s.average);
+            if (avgCtx && reportData.piarComparison && reportData.piarComparison.piar && reportData.piarComparison.non_piar) {
+                
+                const piarData = allAreas.map(area => reportData.piarComparison.piar[areaKeyMap[area]]?.average || 0);
+                const nonPiarData = allAreas.map(area => reportData.piarComparison.non_piar[areaKeyMap[area]]?.average || 0);
+                
+                // CON PIAR = gris, SIN PIAR = color del área
+                const piarColors = '#9ca3af'; // Gris constante para CON PIAR
+                const nonPiarColors = allAreas.map(area => areaColors[area]); // Color área para SIN PIAR
+
+                // Calcular máximo dinámico
+                const maxValue = Math.max(...piarData, ...nonPiarData) * 1.15;
                 
                 new Chart(avgCtx, {
                     type: 'bar',
                     data: {
-                        labels: areas,
-                        datasets: [{
-                            label: 'Promedio',
-                            data: avgs,
-                            backgroundColor: areas.map(a => areaColors[a] || '#3b82f6'),
-                            borderRadius: 6
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { 
-                            legend: { display: false },
-                            datalabels: {
-                                anchor: 'end',
-                                align: 'top',
-                                formatter: (value) => Math.round(value * 100) / 100,
-                                font: { weight: 'bold', size: 11 },
-                                color: '#374151'
-                            }
-                        },
-                        scales: {
-                            y: { beginAtZero: true, max: 100, title: { display: true, text: 'Puntaje' } }
-                        }
-                    }
-                });
-            }
-            
-            // 2. Desviación estándar
-            const stdCtx = document.getElementById('chartStdDev');
-            if (stdCtx && reportData.areaStatistics) {
-                const areas = reportData.areaStatistics.map(s => s.area);
-                const stds = reportData.areaStatistics.map(s => s.stdDev);
-                
-                new Chart(stdCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: areas,
-                        datasets: [{
-                            label: 'Desv. Estándar',
-                            data: stds,
-                            backgroundColor: areas.map(a => areaColors[a] || '#3b82f6'),
-                            borderRadius: 6
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { 
-                            legend: { display: false },
-                            datalabels: {
-                                anchor: 'end',
-                                align: 'top',
-                                formatter: (value) => (Math.round(value * 100) / 100).toFixed(2),
-                                font: { weight: 'bold', size: 11 },
-                                color: '#374151'
-                            }
-                        },
-                        scales: {
-                            y: { beginAtZero: true, title: { display: true, text: 'Desviación' } }
-                        }
-                    }
-                });
-            }
-            
-            // 3. Promedios por grupo
-            const groupCtx = document.getElementById('chartGroups');
-            if (groupCtx && reportData.groupComparison) {
-                const groups = Object.keys(reportData.groupComparison);
-                const allAreas = ['Lectura', 'Matemáticas', 'Sociales', 'Naturales', 'Inglés'];
-                const areaKeyMap = {
-                    'Lectura': 'lectura',
-                    'Matemáticas': 'matematicas',
-                    'Sociales': 'sociales',
-                    'Naturales': 'naturales',
-                    'Inglés': 'ingles'
-                };
-                
-                const datasets = allAreas.map(area => ({
-                    label: area,
-                    data: groups.map(g => reportData.groupComparison[g][areaKeyMap[area]] || 0),
-                    backgroundColor: areaColors[area]
-                }));
-                
-                new Chart(groupCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: groups,
-                        datasets: datasets
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { 
-                            legend: { position: 'bottom' },
-                            datalabels: {
-                                anchor: 'end',
-                                align: 'top',
-                                formatter: (value) => Math.round(value),
-                                font: { weight: 'bold', size: 10 },
-                                color: '#374151'
-                            }
-                        },
-                        scales: {
-                            y: { beginAtZero: true, max: 100 },
-                            x: { stacked: false }
-                        }
-                    }
-                });
-            }
-            
-            // 4. Comparativo PIAR
-            const piarCtx = document.getElementById('chartPiar');
-            if (piarCtx && reportData.piarComparison && reportData.piarComparison.piar && reportData.piarComparison.non_piar) {
-                const allAreas = ['Lectura', 'Matemáticas', 'Sociales', 'Naturales', 'Inglés'];
-                const areaKeyMap = {
-                    'Lectura': 'lectura',
-                    'Matemáticas': 'matematicas',
-                    'Sociales': 'sociales',
-                    'Naturales': 'naturales',
-                    'Inglés': 'ingles'
-                };
-                const piarData = allAreas.map(area => reportData.piarComparison.piar[areaKeyMap[area]]?.average || 0);
-                const nonPiarData = allAreas.map(area => reportData.piarComparison.non_piar[areaKeyMap[area]]?.average || 0);
-                
-                new Chart(piarCtx, {
-                    type: 'bar',
-                    data: {
                         labels: allAreas,
                         datasets: [
-                            { label: 'Sin PIAR', data: nonPiarData, backgroundColor: '#3b82f6' },
-                            { label: 'PIAR', data: piarData, backgroundColor: '#fbbf24' }
+                            { 
+                                label: 'SIN PIAR', 
+                                data: nonPiarData, 
+                                backgroundColor: nonPiarColors,
+                                borderRadius: 6
+                            },
+                            { 
+                                label: 'CON PIAR', 
+                                data: piarData, 
+                                backgroundColor: piarColors,
+                                borderRadius: 6
+                            }
                         ]
                     },
                     options: {
@@ -726,19 +520,152 @@
                             datalabels: {
                                 anchor: 'end',
                                 align: 'top',
-                                formatter: (value) => Math.round(value),
-                                font: { weight: 'bold', size: 11 },
-                                color: '#374151'
-                            }
+                                formatter: (value) => Math.round(value * 100) / 100,
+                            },
                         },
                         scales: {
-                            y: { beginAtZero: true, max: 100 }
+                            y: { beginAtZero: true, max: Math.min(maxValue, 100), title: { display: true, text: 'Puntaje Promedio' } }
                         }
                     }
                 });
             }
             
-            // 5. Distribución de puntajes globales
+            // 2. Desviación estándar (Comparativo PIAR)
+            const stdCtx = document.getElementById('chartStdDev');
+            if (stdCtx && reportData.piarComparison && reportData.piarComparison.piar && reportData.piarComparison.non_piar) {
+
+                const piarStds = allAreas.map(area => reportData.piarComparison.piar[areaKeyMap[area]]?.stdDev || 0);
+                const nonPiarStds = allAreas.map(area => reportData.piarComparison.non_piar[areaKeyMap[area]]?.stdDev || 0);
+                
+                // CON PIAR = gris, SIN PIAR = color del área
+                const piarColors = '#9ca3af'; 
+                const nonPiarColors = allAreas.map(area => areaColors[area]);
+
+                // Calcular máximo dinámico
+                const maxValue = Math.max(...piarStds, ...nonPiarStds) * 1.15;
+                
+                new Chart(stdCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: allAreas,
+                        datasets: [
+                            { 
+                                label: 'SIN PIAR', 
+                                data: nonPiarStds, 
+                                backgroundColor: nonPiarColors,
+                                borderRadius: 6
+                            },
+                            { 
+                                label: 'CON PIAR', 
+                                data: piarStds, 
+                                backgroundColor: piarColors,
+                                borderRadius: 6
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { 
+                            legend: { position: 'bottom' },
+                            datalabels: {
+                                anchor: 'end',
+                                align: 'top',
+                                formatter: (value) => (Math.round(value * 100) / 100).toFixed(2),
+                            }
+                        },
+                        scales: {
+                            y: { beginAtZero: true, max: Math.ceil(maxValue), title: { display: true, text: 'Desviación Estándar' } }
+                        }
+                    }
+                });
+            }
+            
+            // 3. Promedios por grupo
+            const groupContainer = document.getElementById('groupChartsContainer');
+            if (groupContainer && reportData.groupComparison) {
+                const groups = Object.keys(reportData.groupComparison);
+                
+                groups.forEach(groupKey => {
+                    const groupData = reportData.groupComparison[groupKey];
+                    
+                    if (!groupData) return;
+                    
+                    // Crear wrapper y canvas
+                    const wrapper = document.createElement('div');
+                    wrapper.style.display = 'block';
+                    wrapper.style.marginBottom = '40px';
+                    wrapper.style.background = '#fff';
+                    wrapper.style.padding = '10px';
+                    wrapper.style.borderRadius = '8px';
+                    
+                    const title = document.createElement('h3');
+                    title.innerText = `Grupo ${groupKey}`;
+                    title.style.textAlign = 'center';
+                    title.style.marginBottom = '15px';
+                    title.style.color = '#1f2937';
+                    title.style.fontSize = '16px';
+                    
+                    const canvasContainer = document.createElement('div');
+                    canvasContainer.style.height = '250px';
+                    canvasContainer.style.position = 'relative';
+                    
+                    const canvas = document.createElement('canvas');
+                    
+                    canvasContainer.appendChild(canvas);
+                    wrapper.appendChild(title);
+                    wrapper.appendChild(canvasContainer);
+                    groupContainer.appendChild(wrapper);
+                    
+                    // Preparar datos
+                    const piarData = allAreas.map(area => groupData[areaKeyMap[area]]?.piar || 0);
+                    const nonPiarData = allAreas.map(area => groupData[areaKeyMap[area]]?.non_piar || 0);
+                    
+                    // CON PIAR = gris, SIN PIAR = color del área
+                    const piarColors = '#9ca3af'; 
+                    const nonPiarColors = allAreas.map(area => areaColors[area]);
+                    
+                    const maxValue = Math.max(...piarData, ...nonPiarData) * 1.15;
+                    
+                    new Chart(canvas, {
+                        type: 'bar',
+                        data: {
+                            labels: allAreas,
+                            datasets: [
+                                { 
+                                    label: 'SIN PIAR', 
+                                    data: nonPiarData, 
+                                    backgroundColor: nonPiarColors,
+                                    borderRadius: 6
+                                },
+                                { 
+                                    label: 'CON PIAR', 
+                                    data: piarData, 
+                                    backgroundColor: piarColors,
+                                    borderRadius: 6
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'bottom' },
+                                datalabels: {
+                                    anchor: 'end',
+                                    align: 'top',
+                                    formatter: Math.round,
+                                }
+                            },
+                            scales: {
+                                y: { beginAtZero: true, max: Math.min(maxValue, 100) }
+                            }
+                        }
+                    });
+                });
+            }
+            
+            // 4. Distribución (Se mantiene)
             const distCtx = document.getElementById('chartDistribution');
             if (distCtx && reportData.distributions && reportData.distributions.global) {
                 const distData = reportData.distributions.global;
@@ -765,8 +692,6 @@
                                 anchor: 'end',
                                 align: 'top',
                                 formatter: (value) => value,
-                                font: { weight: 'bold', size: 11 },
-                                color: '#374151'
                             }
                         },
                         scales: {

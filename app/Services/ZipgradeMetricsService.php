@@ -410,7 +410,7 @@ class ZipgradeMetricsService
      * Obtiene matrículas para un examen con filtros opcionales.
      * Solo incluye estudiantes que tienen respuestas en el examen.
      */
-    private function getEnrollmentsForExam(Exam $exam, ?array $filters = null): Collection
+    public function getEnrollmentsForExam(Exam $exam, ?array $filters = null): Collection
     {
         $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
 

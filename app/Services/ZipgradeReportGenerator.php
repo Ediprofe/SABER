@@ -4,9 +4,16 @@ namespace App\Services;
 
 use App\Models\Enrollment;
 use App\Models\Exam;
+use App\Models\ExamSession;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\View;
 
+/**
+ * Genera reportes HTML para exámenes Zipgrade.
+ * 
+ * REFACTORIZADO: Ahora usa ZipgradeMetricsService como fuente única de datos,
+ * eliminando duplicación de código y asegurando consistencia con Excel.
+ */
 class ZipgradeReportGenerator
 {
     public function __construct(
@@ -15,7 +22,7 @@ class ZipgradeReportGenerator
 
     /**
      * Genera un reporte HTML completo con los datos de Zipgrade.
-     * Similar al reporte de Features 1 y 2, pero usando datos calculados desde Zipgrade.
+     * Usa las mismas fuentes de datos que el Excel para garantizar consistencia.
      */
     public function generateHtmlReport(Exam $exam, ?string $group = null): string
     {
@@ -24,31 +31,34 @@ class ZipgradeReportGenerator
             $filters['group'] = $group;
         }
 
-        // Gather all necessary data
-        $statistics = $this->getExamStatistics($exam, $filters);
+        // Usar MetricsService como fuente única de datos
+        $enrollments = $this->metricsService->getEnrollmentsForExam($exam, $filters);
+        
+        // Gather all necessary data using centralized methods
+        $statistics = $this->buildStatisticsFromMetrics($exam, $enrollments);
 
         // Get all results with student info
-        $results = $this->getExamResults($exam, $group);
+        $results = $this->buildResultsFromEnrollments($exam, $enrollments);
 
         // Get top performers for each area
         $areas = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles', 'global'];
         $topPerformers = [];
         foreach ($areas as $area) {
-            $topPerformers[$area] = $this->getTopPerformers($exam, $area, 5, $filters);
+            $topPerformers[$area] = $this->getTopPerformers($results, $area, 5);
         }
 
         // Get distributions
         $distributions = [];
         foreach (['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'] as $area) {
-            $distributions[$area] = $this->getDistribution($exam, $area, 10, $filters);
+            $distributions[$area] = $this->getDistribution($results, $area, 10);
         }
         // Add global distribution
-        $distributions['global'] = $this->getGlobalDistribution($exam, 10, $filters);
+        $distributions['global'] = $this->getGlobalDistribution($results, 10);
 
-        // Group comparison
+        // Group comparison - usando MetricsService
         $groupComparison = $this->getGroupComparison($exam, $filters);
 
-        // PIAR comparison
+        // PIAR comparison - usando MetricsService
         $piarComparison = $this->getPiarComparison($exam, $filters);
 
         // Prepare data for the view
@@ -87,12 +97,10 @@ class ZipgradeReportGenerator
     }
 
     /**
-     * Obtiene estadísticas globales del examen para el reporte.
+     * Construye estadísticas usando enrollments pre-obtenidos del MetricsService.
      */
-    private function getExamStatistics(Exam $exam, array $filters): object
+    private function buildStatisticsFromMetrics(Exam $exam, Collection $enrollments): object
     {
-        $enrollments = $this->getEnrollmentsForExam($exam, $filters);
-
         $globalScores = [];
         $areaScores = [
             'lectura' => [],
@@ -112,6 +120,7 @@ class ZipgradeReportGenerator
             foreach ($areaScores as $area => &$values) {
                 $values[] = $scores[$area];
             }
+            unset($values); // IMPORTANTE: romper la referencia
 
             if ($enrollment->is_piar) {
                 $piarCount++;
@@ -172,27 +181,10 @@ class ZipgradeReportGenerator
     }
 
     /**
-     * Obtiene todos los resultados con información de estudiante.
-     * Solo incluye estudiantes que tienen respuestas en el examen.
+     * Construye resultados usando enrollments pre-obtenidos.
      */
-    private function getExamResults(Exam $exam, ?string $group = null): Collection
+    private function buildResultsFromEnrollments(Exam $exam, Collection $enrollments): Collection
     {
-        $sessionIds = \App\Models\ExamSession::where('exam_id', $exam->id)->pluck('id');
-
-        $query = Enrollment::query()
-            ->where('academic_year_id', $exam->academic_year_id)
-            ->where('status', 'ACTIVE')
-            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
-                $query->whereIn('exam_session_id', $sessionIds);
-            })
-            ->with('student');
-
-        if ($group) {
-            $query->where('group', $group);
-        }
-
-        $enrollments = $query->get();
-
         return $enrollments->map(function ($enrollment) use ($exam) {
             $scores = $this->metricsService->getStudentAllAreaScores($enrollment, $exam);
 
@@ -212,10 +204,8 @@ class ZipgradeReportGenerator
     /**
      * Obtiene los top performers para un área específica.
      */
-    private function getTopPerformers(Exam $exam, string $area, int $limit, array $filters): Collection
+    private function getTopPerformers(Collection $results, string $area, int $limit): Collection
     {
-        $results = $this->getExamResults($exam, $filters['group'] ?? null);
-
         $sorted = $results->sortByDesc(function ($result) use ($area) {
             return $area === 'global' ? $result->global_score : $result->{$area};
         });
@@ -226,10 +216,8 @@ class ZipgradeReportGenerator
     /**
      * Obtiene la distribución de puntajes para un área.
      */
-    private function getDistribution(Exam $exam, string $area, int $bins, array $filters): array
+    private function getDistribution(Collection $results, string $area, int $bins): array
     {
-        $results = $this->getExamResults($exam, $filters['group'] ?? null);
-
         $scores = $results->map(function ($result) use ($area) {
             return $area === 'global' ? $result->global_score : $result->{$area};
         })->toArray();
@@ -277,10 +265,8 @@ class ZipgradeReportGenerator
     /**
      * Obtiene la distribución de puntajes globales.
      */
-    private function getGlobalDistribution(Exam $exam, int $bins, array $filters): array
+    private function getGlobalDistribution(Collection $results, int $bins): array
     {
-        $results = $this->getExamResults($exam, $filters['group'] ?? null);
-
         $scores = $results->map(function ($result) {
             return $result->global_score;
         })->toArray();
@@ -326,12 +312,16 @@ class ZipgradeReportGenerator
     }
 
     /**
-     * Obtiene comparación por grupos.
-     * Solo incluye grupos donde hay estudiantes con respuestas en el examen.
+     * Obtiene comparación por grupos usando MetricsService.
+     * Devuelve promedios segregados por CON PIAR (todos) vs SIN PIAR (solo no-piar).
+     * 
+     * SEMÁNTICA CORRECTA (igual que Excel):
+     * - CON PIAR: Todos los estudiantes (incluyendo los que tienen PIAR)
+     * - SIN PIAR: Todos los estudiantes EXCEPTO los que tienen PIAR
      */
     private function getGroupComparison(Exam $exam, array $filters): array
     {
-        $sessionIds = \App\Models\ExamSession::where('exam_id', $exam->id)->pluck('id');
+        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
 
         $groups = Enrollment::query()
             ->where('academic_year_id', $exam->academic_year_id)
@@ -340,74 +330,104 @@ class ZipgradeReportGenerator
                 $query->whereIn('exam_session_id', $sessionIds);
             })
             ->distinct()
-            ->pluck('group');
+            ->pluck('group')
+            ->sort()
+            ->values();
 
         $result = [];
+        $areas = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'];
+
         foreach ($groups as $group) {
             $groupFilters = array_merge($filters, ['group' => $group]);
-            $groupEnrollments = $this->getEnrollmentsForExam($exam, $groupFilters);
+            $groupEnrollments = $this->metricsService->getEnrollmentsForExam($exam, $groupFilters);
 
             if ($groupEnrollments->isEmpty()) {
                 continue;
             }
 
-            $areaScores = [
-                'lectura' => [],
-                'matematicas' => [],
-                'sociales' => [],
-                'naturales' => [],
-                'ingles' => [],
-            ];
+            // Inicializar acumuladores
+            // con_piar = TODOS los estudiantes
+            // sin_piar = solo estudiantes SIN PIAR
+            $scoresByArea = [];
+            foreach ($areas as $area) {
+                $scoresByArea[$area] = [
+                    'all' => [],      // Todos (CON PIAR)
+                    'non_piar' => []  // Solo no-PIAR (SIN PIAR)
+                ];
+            }
 
             foreach ($groupEnrollments as $enrollment) {
                 $scores = $this->metricsService->getStudentAllAreaScores($enrollment, $exam);
-                foreach ($areaScores as $area => &$values) {
-                    $values[] = $scores[$area];
+                $isPiar = $enrollment->is_piar;
+                
+                foreach ($areas as $area) {
+                    // TODOS van al grupo "all" (CON PIAR)
+                    $scoresByArea[$area]['all'][] = $scores[$area];
+                    
+                    // Solo los NO-PIAR van al grupo "non_piar" (SIN PIAR)
+                    if (!$isPiar) {
+                        $scoresByArea[$area]['non_piar'][] = $scores[$area];
+                    }
                 }
             }
 
-            $result[$group] = [
-                'group' => $group,
-                'count' => $groupEnrollments->count(),
-                'lectura' => ! empty($areaScores['lectura']) ? array_sum($areaScores['lectura']) / count($areaScores['lectura']) : 0,
-                'matematicas' => ! empty($areaScores['matematicas']) ? array_sum($areaScores['matematicas']) / count($areaScores['matematicas']) : 0,
-                'sociales' => ! empty($areaScores['sociales']) ? array_sum($areaScores['sociales']) / count($areaScores['sociales']) : 0,
-                'naturales' => ! empty($areaScores['naturales']) ? array_sum($areaScores['naturales']) / count($areaScores['naturales']) : 0,
-                'ingles' => ! empty($areaScores['ingles']) ? array_sum($areaScores['ingles']) / count($areaScores['ingles']) : 0,
-            ];
+            // Calcular promedios
+            $groupAverages = ['group' => $group, 'count' => $groupEnrollments->count()];
+            
+            foreach ($areas as $area) {
+                $allValues = $scoresByArea[$area]['all'];
+                $nonPiarValues = $scoresByArea[$area]['non_piar'];
+                
+                $groupAverages[$area] = [
+                    // CON PIAR = promedio de TODOS
+                    'piar' => !empty($allValues) ? array_sum($allValues) / count($allValues) : 0,
+                    // SIN PIAR = promedio solo de NO-PIAR
+                    'non_piar' => !empty($nonPiarValues) ? array_sum($nonPiarValues) / count($nonPiarValues) : 0,
+                    'all_count' => count($allValues),
+                    'non_piar_count' => count($nonPiarValues)
+                ];
+            }
+            
+            $result[$group] = $groupAverages;
         }
 
         return $result;
     }
 
     /**
-     * Obtiene comparativo PIAR vs No-PIAR.
+     * Obtiene comparativo CON PIAR vs SIN PIAR usando MetricsService.
+     * 
+     * SEMÁNTICA CORRECTA (igual que Excel):
+     * - CON PIAR: Todos los estudiantes (incluyendo los que tienen PIAR)
+     * - SIN PIAR: Todos los estudiantes EXCEPTO los que tienen PIAR
      */
     private function getPiarComparison(Exam $exam, array $filters): array
     {
-        $piarFilters = array_merge($filters, ['piar_only' => true]);
-        $nonPiarFilters = array_merge($filters, ['exclude_piar' => true]);
+        // CON PIAR: todos los estudiantes (sin filtro de PIAR)
+        $conPiarFilters = $filters; // Sin filtro adicional = todos
+        // SIN PIAR: excluir estudiantes con PIAR
+        $sinPiarFilters = array_merge($filters, ['exclude_piar' => true]);
 
-        $piarStats = $this->getAreaAveragesForComparison($exam, $piarFilters);
-        $nonPiarStats = $this->getAreaAveragesForComparison($exam, $nonPiarFilters);
+        $conPiarStats = $this->getAreaAveragesForComparison($exam, $conPiarFilters);
+        $sinPiarStats = $this->getAreaAveragesForComparison($exam, $sinPiarFilters);
 
-        $piarCount = $this->getEnrollmentsForExam($exam, $piarFilters)->count();
-        $nonPiarCount = $this->getEnrollmentsForExam($exam, $nonPiarFilters)->count();
+        $conPiarCount = $this->metricsService->getEnrollmentsForExam($exam, $conPiarFilters)->count();
+        $sinPiarCount = $this->metricsService->getEnrollmentsForExam($exam, $sinPiarFilters)->count();
 
         return [
-            'piar' => $piarStats,
-            'non_piar' => $nonPiarStats,
-            'piar_count' => $piarCount,
-            'non_piar_count' => $nonPiarCount,
+            'piar' => $conPiarStats,       // CON PIAR = todos
+            'non_piar' => $sinPiarStats,   // SIN PIAR = excluyendo PIAR
+            'piar_count' => $conPiarCount,
+            'non_piar_count' => $sinPiarCount,
         ];
     }
 
     /**
-     * Obtiene promedios por área para comparación.
+     * Obtiene promedios por área para comparación usando MetricsService.
      */
     private function getAreaAveragesForComparison(Exam $exam, array $filters): array
     {
-        $enrollments = $this->getEnrollmentsForExam($exam, $filters);
+        $enrollments = $this->metricsService->getEnrollmentsForExam($exam, $filters);
 
         $areaScores = [
             'lectura' => [],
@@ -422,12 +442,15 @@ class ZipgradeReportGenerator
             foreach ($areaScores as $area => &$values) {
                 $values[] = $scores[$area];
             }
+            unset($values); // IMPORTANTE: romper la referencia después del loop
         }
 
         $result = [];
         foreach ($areaScores as $area => $values) {
+            $avg = ! empty($values) ? array_sum($values) / count($values) : 0;
             $result[$area] = (object) [
-                'average' => ! empty($values) ? array_sum($values) / count($values) : 0,
+                'average' => $avg,
+                'stdDev' => $this->calculateStdDev($values, $avg),
             ];
         }
 
@@ -435,37 +458,9 @@ class ZipgradeReportGenerator
     }
 
     /**
-     * Obtiene matrículas para un examen con filtros opcionales.
-     * Solo incluye estudiantes que tienen respuestas en el examen.
-     */
-    private function getEnrollmentsForExam(Exam $exam, array $filters): Collection
-    {
-        $sessionIds = \App\Models\ExamSession::where('exam_id', $exam->id)->pluck('id');
-
-        $query = Enrollment::query()
-            ->where('academic_year_id', $exam->academic_year_id)
-            ->where('status', 'ACTIVE')
-            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
-                $query->whereIn('exam_session_id', $sessionIds);
-            });
-
-        if (! empty($filters['group'])) {
-            $query->where('group', $filters['group']);
-        }
-
-        if (! empty($filters['piar_only'])) {
-            $query->where('is_piar', true);
-        }
-
-        if (! empty($filters['exclude_piar'])) {
-            $query->where('is_piar', false);
-        }
-
-        return $query->get();
-    }
-
-    /**
      * Calcula la desviación estándar.
+     * Nota: Este cálculo se mantiene aquí para formateo específico del reporte,
+     * pero los datos provienen del MetricsService.
      */
     private function calculateStdDev(array $values, float $mean): float
     {
