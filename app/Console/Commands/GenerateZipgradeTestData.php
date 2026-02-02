@@ -31,7 +31,8 @@ class GenerateZipgradeTestData extends Command
         ],
         'Lectura' => [
             'competencias' => ['Identificar y ubicar', 'Relacionar e interpretar', 'Evaluar y reflexionar'],
-            'componentes' => ['Texto continuo', 'Texto discontinuo', 'Texto literario'],
+            'tipos_texto' => ['Texto continuo', 'Texto discontinuo', 'Texto literario'],
+            'niveles_lectura' => ['Literal', 'Inferencial', 'Crítico'],
         ],
         'Inglés' => [
             'competencias' => ['Comprensión', 'Expresión', 'Interacción'],
@@ -120,12 +121,34 @@ class GenerateZipgradeTestData extends Command
                 );
             }
 
-            // Crear componentes
-            foreach ($data['componentes'] as $comp) {
-                TagHierarchy::firstOrCreate(
-                    ['tag_name' => $comp],
-                    ['tag_type' => 'componente', 'parent_area' => $areaName]
-                );
+            // Crear tipos de texto (solo para Lectura)
+            if (isset($data['tipos_texto'])) {
+                foreach ($data['tipos_texto'] as $tipo) {
+                    TagHierarchy::firstOrCreate(
+                        ['tag_name' => $tipo],
+                        ['tag_type' => 'tipo_texto', 'parent_area' => $areaName]
+                    );
+                }
+            }
+
+            // Crear niveles de lectura (solo para Lectura)
+            if (isset($data['niveles_lectura'])) {
+                foreach ($data['niveles_lectura'] as $nivel) {
+                    TagHierarchy::firstOrCreate(
+                        ['tag_name' => $nivel],
+                        ['tag_type' => 'nivel_lectura', 'parent_area' => $areaName]
+                    );
+                }
+            }
+
+            // Crear componentes (para otras áreas)
+            if (isset($data['componentes'])) {
+                foreach ($data['componentes'] as $comp) {
+                    TagHierarchy::firstOrCreate(
+                        ['tag_name' => $comp],
+                        ['tag_type' => 'componente', 'parent_area' => $areaName]
+                    );
+                }
             }
         }
 
@@ -174,16 +197,31 @@ class GenerateZipgradeTestData extends Command
                     // Formato Zipgrade usa punto para decimales: 0.334
                     $earnedPoints = $isCorrect ? '0.334' : '0.0';
 
-                    // Seleccionar competencia y componente aleatorios
-                    $competencia = $areaData['competencias'][array_rand($areaData['competencias'])];
-                    $componente = $areaData['componentes'][array_rand($areaData['componentes'])];
-
-                    // 3 filas por pregunta (Área, Competencia, Componente)
+                    // Generar tags dinámicamente según las dimensiones disponibles
                     $tags = [
                         ['tag' => $areaName, 'type' => 'area'],
-                        ['tag' => $competencia, 'type' => 'competencia'],
-                        ['tag' => $componente, 'type' => 'componente'],
                     ];
+
+                    // Agregar competencia
+                    if (isset($areaData['competencias'])) {
+                        $competencia = $areaData['competencias'][array_rand($areaData['competencias'])];
+                        $tags[] = ['tag' => $competencia, 'type' => 'competencia'];
+                    }
+
+                    // Agregar tipo de texto o componente según el área
+                    if (isset($areaData['tipos_texto'])) {
+                        $tipoTexto = $areaData['tipos_texto'][array_rand($areaData['tipos_texto'])];
+                        $tags[] = ['tag' => $tipoTexto, 'type' => 'tipo_texto'];
+                    } elseif (isset($areaData['componentes'])) {
+                        $componente = $areaData['componentes'][array_rand($areaData['componentes'])];
+                        $tags[] = ['tag' => $componente, 'type' => 'componente'];
+                    }
+
+                    // Agregar nivel de lectura (solo para Lectura)
+                    if (isset($areaData['niveles_lectura'])) {
+                        $nivelLectura = $areaData['niveles_lectura'][array_rand($areaData['niveles_lectura'])];
+                        $tags[] = ['tag' => $nivelLectura, 'type' => 'nivel_lectura'];
+                    }
 
                     foreach ($tags as $tagData) {
                         $rowData = [

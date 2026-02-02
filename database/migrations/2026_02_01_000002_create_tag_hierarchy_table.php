@@ -11,7 +11,8 @@ return new class extends Migration
         Schema::create('tag_hierarchy', function (Blueprint $table) {
             $table->id();
             $table->string('tag_name', 100)->unique();
-            $table->enum('tag_type', ['area', 'competencia', 'componente', 'tipo_texto', 'parte']);
+            // Nuevo enum con nivel_lectura incluido
+            $table->enum('tag_type', ['area', 'competencia', 'componente', 'tipo_texto', 'nivel_lectura', 'parte']);
             $table->string('parent_area', 50)->nullable();
             $table->timestamps();
 

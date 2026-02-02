@@ -388,12 +388,18 @@ class ZipgradeMetricsService
 
     /**
      * Obtiene matrículas para un examen con filtros opcionales.
+     * Solo incluye estudiantes que tienen respuestas en el examen.
      */
     private function getEnrollmentsForExam(Exam $exam, ?array $filters = null): Collection
     {
+        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+
         $query = Enrollment::query()
             ->where('academic_year_id', $exam->academic_year_id)
-            ->where('status', 'ACTIVE');
+            ->where('status', 'ACTIVE')
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            });
 
         if (! empty($filters['group'])) {
             $query->where('group', $filters['group']);
@@ -411,9 +417,9 @@ class ZipgradeMetricsService
     }
 
     /**
-     * Obtiene análisis por dimensión (competencia/componente/parte) agrupado por grupos.
+     * Obtiene análisis por dimensión (competencia/componente/parte/tipo_texto/nivel_lectura) agrupado por grupos.
      *
-     * @param  int  $dimension  1 para dimensión 1 (competencias/parte), 2 para dimensión 2 (componentes/tipo_texto)
+     * @param  int  $dimension  1 para dimensión 1 (competencias/parte), 2 para dimensión 2 (componentes/tipo_texto), 3 para dimensión 3 (nivel_lectura en Lectura)
      */
     public function getDimensionAnalysisByGroup(Exam $exam, string $area, int $dimension): array
     {
@@ -423,7 +429,12 @@ class ZipgradeMetricsService
         $tagTypes = match ([$area, $dimension]) {
             ['ingles', 1] => ['parte'],
             ['lectura', 2] => ['tipo_texto'],
-            default => $dimension === 1 ? ['competencia'] : ['componente'],
+            ['lectura', 3] => ['nivel_lectura'],
+            default => match ($dimension) {
+                1 => ['competencia'],
+                2 => ['componente'],
+                default => ['componente'],
+            },
         };
 
         // Buscar área
@@ -446,19 +457,20 @@ class ZipgradeMetricsService
                 ->get();
         }
 
-        // Obtener grupos con su grado
+        // Obtener grupos donde hay estudiantes con respuestas en este examen
         $groupData = Enrollment::where('academic_year_id', $exam->academic_year_id)
             ->where('status', 'ACTIVE')
-            ->select('grade', 'group')
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            })
+            ->select('group')
             ->distinct()
-            ->orderBy('grade')
             ->orderBy('group')
             ->get()
             ->map(function ($item) {
                 return [
-                    'grade' => $item->grade,
                     'group' => $item->group,
-                    'label' => $item->grade.'-'.$item->group,
+                    'label' => $item->group,
                 ];
             });
 

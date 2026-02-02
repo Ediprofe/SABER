@@ -173,12 +173,18 @@ class ZipgradeReportGenerator
 
     /**
      * Obtiene todos los resultados con información de estudiante.
+     * Solo incluye estudiantes que tienen respuestas en el examen.
      */
     private function getExamResults(Exam $exam, ?string $group = null): Collection
     {
+        $sessionIds = \App\Models\ExamSession::where('exam_id', $exam->id)->pluck('id');
+
         $query = Enrollment::query()
             ->where('academic_year_id', $exam->academic_year_id)
             ->where('status', 'ACTIVE')
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            })
             ->with('student');
 
         if ($group) {
@@ -321,15 +327,20 @@ class ZipgradeReportGenerator
 
     /**
      * Obtiene comparación por grupos.
+     * Solo incluye grupos donde hay estudiantes con respuestas en el examen.
      */
     private function getGroupComparison(Exam $exam, array $filters): array
     {
-        $query = Enrollment::query()
+        $sessionIds = \App\Models\ExamSession::where('exam_id', $exam->id)->pluck('id');
+
+        $groups = Enrollment::query()
             ->where('academic_year_id', $exam->academic_year_id)
             ->where('status', 'ACTIVE')
-            ->distinct();
-
-        $groups = $query->pluck('group');
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            })
+            ->distinct()
+            ->pluck('group');
 
         $result = [];
         foreach ($groups as $group) {
@@ -425,12 +436,18 @@ class ZipgradeReportGenerator
 
     /**
      * Obtiene matrículas para un examen con filtros opcionales.
+     * Solo incluye estudiantes que tienen respuestas en el examen.
      */
     private function getEnrollmentsForExam(Exam $exam, array $filters): Collection
     {
+        $sessionIds = \App\Models\ExamSession::where('exam_id', $exam->id)->pluck('id');
+
         $query = Enrollment::query()
             ->where('academic_year_id', $exam->academic_year_id)
-            ->where('status', 'ACTIVE');
+            ->where('status', 'ACTIVE')
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            });
 
         if (! empty($filters['group'])) {
             $query->where('group', $filters['group']);

@@ -85,6 +85,9 @@ class CompleteResultsSheet implements FromCollection, ShouldAutoSize, WithColumn
         $query = Enrollment::query()
             ->where('academic_year_id', $this->exam->academic_year_id)
             ->where('status', 'ACTIVE')
+            ->whereHas('studentAnswers.question.session', function ($query) {
+                $query->where('exam_id', $this->exam->id);
+            })
             ->with('student');
 
         if ($this->groupFilter) {
@@ -282,6 +285,9 @@ class AnonymizedResultsSheet implements FromCollection, ShouldAutoSize, WithColu
         $query = Enrollment::query()
             ->where('academic_year_id', $this->exam->academic_year_id)
             ->where('status', 'ACTIVE')
+            ->whereHas('studentAnswers.question.session', function ($query) {
+                $query->where('exam_id', $this->exam->id);
+            })
             ->with('student')
             ->join('students', 'enrollments.student_id', '=', 'students.id')
             ->orderBy('students.document_id', 'asc')
@@ -479,6 +485,7 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
             $area = $this->getAreaFromQuestion($question);
             $dimension1 = $this->getDimension1FromQuestion($question, $area);
             $dimension2 = $this->getDimension2FromQuestion($question, $area);
+            $dimension3 = $this->getDimension3FromQuestion($question, $area);
 
             // Calcular % de acierto desde respuestas
             $totalAnswers = $question->studentAnswers()->count();
@@ -499,6 +506,7 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
                 'area' => $area ?? '—',
                 'dim1' => $dimension1 ?? '—',
                 'dim2' => $dimension2 ?? '—',
+                'dim3' => $dimension3 ?? '—',
                 'pct_acierto' => $pctCorrect,
                 'dificultad' => $dificultad,
                 'respuesta_1' => $question->response_1 ?? '—',
@@ -580,6 +588,18 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
         return $componente?->tag_name;
     }
 
+    private function getDimension3FromQuestion($question, ?string $area): ?string
+    {
+        // Solo Lectura tiene dimensión 3 (Nivel de Lectura)
+        if (in_array($area, ['Lectura', 'Lectura Crítica'])) {
+            $nivel = $question->tags->firstWhere('tag_type', 'nivel_lectura');
+
+            return $nivel?->tag_name;
+        }
+
+        return null;
+    }
+
     public function headings(): array
     {
         return [
@@ -589,6 +609,7 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
             'Área',
             'Dim 1',
             'Dim 2',
+            'Dim 3',
             '% Acierto',
             'Dificultad',
             '1° Elegida',
@@ -630,23 +651,23 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '1E3A8A']]],
         ];
 
-        $sheet->getStyle('A1:P1')->applyFromArray($headerStyle);
+        $sheet->getStyle('A1:Q1')->applyFromArray($headerStyle);
 
         // Filas alternadas
         for ($row = 2; $row <= $lastRow; $row++) {
             $fillColor = ($row % 2 == 0) ? 'F0F9FF' : 'FFFFFF';
-            $sheet->getStyle("A{$row}:P{$row}")->applyFromArray([
+            $sheet->getStyle("A{$row}:Q{$row}")->applyFromArray([
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fillColor]],
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E2E8F0']]],
             ]);
         }
 
-        // Resaltar si 1° Elegida ≠ Correcta (columnas C=3 y I=9)
+        // Resaltar si 1° Elegida ≠ Correcta (columnas C=Correcta, J=1° Elegida)
         for ($row = 2; $row <= $lastRow; $row++) {
             $correcta = $sheet->getCell("C{$row}")->getValue();
-            $primeraElegida = $sheet->getCell("I{$row}")->getValue();
+            $primeraElegida = $sheet->getCell("J{$row}")->getValue();
             if ($primeraElegida && $correcta && $primeraElegida !== $correcta) {
-                $sheet->getStyle("I{$row}")->applyFromArray([
+                $sheet->getStyle("J{$row}")->applyFromArray([
                     'font' => ['color' => ['rgb' => 'DC2626'], 'bold' => true], // Rojo
                 ]);
             }
@@ -663,11 +684,11 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
         return [
             'A' => NumberFormat::FORMAT_NUMBER, // Sesión
             'B' => NumberFormat::FORMAT_NUMBER, // #
-            'G' => NumberFormat::FORMAT_NUMBER_00, // % Acierto
-            'J' => NumberFormat::FORMAT_NUMBER_00, // 1° %
-            'L' => NumberFormat::FORMAT_NUMBER_00, // 2° %
-            'N' => NumberFormat::FORMAT_NUMBER_00, // 3° %
-            'P' => NumberFormat::FORMAT_NUMBER_00, // 4° %
+            'H' => NumberFormat::FORMAT_NUMBER_00, // % Acierto
+            'K' => NumberFormat::FORMAT_NUMBER_00, // 1° %
+            'M' => NumberFormat::FORMAT_NUMBER_00, // 2° %
+            'O' => NumberFormat::FORMAT_NUMBER_00, // 3° %
+            'Q' => NumberFormat::FORMAT_NUMBER_00, // 4° %
         ];
     }
 }
@@ -689,19 +710,28 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
 
     public function collection(): Collection
     {
-        // Obtener grupos con formato completo (grado-grupo)
+        // Obtener grupos donde hay estudiantes con respuestas en este examen
+        $sessionIds = \App\Models\ExamSession::where('exam_id', $this->exam->id)->pluck('id');
+
         $groupLabels = \App\Models\Enrollment::where('academic_year_id', $this->exam->academic_year_id)
             ->where('status', 'ACTIVE')
-            ->select('grade', 'group')
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            })
+            ->select('group')
             ->distinct()
-            ->orderBy('grade')
             ->orderBy('group')
             ->get()
-            ->map(fn ($e) => $e->grade.'-'.$e->group)
+            ->pluck('group')
             ->values();
 
         $dim1Data = $this->metricsService->getDimensionAnalysisByGroup($this->exam, $this->areaKey, 1);
         $dim2Data = $this->metricsService->getDimensionAnalysisByGroup($this->exam, $this->areaKey, 2);
+
+        // Para Lectura, también obtener Dimensión 3 (Niveles de Lectura)
+        $dim3Data = $this->areaKey === 'lectura'
+            ? $this->metricsService->getDimensionAnalysisByGroup($this->exam, $this->areaKey, 3)
+            : null;
 
         $rows = collect();
 
@@ -749,6 +779,29 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
             }
         }
 
+        // Tabla 3: Dimensión 3 (solo para Lectura - Niveles de Lectura)
+        if ($this->areaKey === 'lectura' && ! empty($dim3Data)) {
+            $rows->push(['', '', '', '', '', '']); // Fila vacía
+            $rows->push(['DIMENSIÓN 3', '', '', '', '', '']);
+            // Header: Promedio primero, luego grupos
+            $headerRow3 = array_merge([$this->getDim3Label(), 'Promedio'], $groupLabels->toArray());
+            $rows->push($headerRow3);
+
+            foreach ($dim3Data as $itemName => $groupScores) {
+                $row = [$itemName];
+                // Calcular promedio primero
+                $values = array_values($groupScores);
+                $avg = ! empty($values) ? array_sum($values) / count($values) : 0;
+                $row[] = round($avg, 2);
+                // Luego los valores por grupo
+                foreach ($groupLabels as $groupLabel) {
+                    $value = isset($groupScores[$groupLabel]) ? $groupScores[$groupLabel] : 0;
+                    $row[] = $value;
+                }
+                $rows->push($row);
+            }
+        }
+
         return $rows;
     }
 
@@ -766,6 +819,12 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
             'lectura' => 'Tipo de Texto',
             default => 'Componente',
         };
+    }
+
+    private function getDim3Label(): string
+    {
+        // Solo Lectura tiene Dimensión 3 (Niveles de Lectura)
+        return 'Nivel de Lectura';
     }
 
     public function title(): string
@@ -786,6 +845,7 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
         // Encontrar filas de encabezados de tabla
         $dim1Row = null;
         $dim2Row = null;
+        $dim3Row = null;
         for ($row = 1; $row <= $lastRow; $row++) {
             $value = $sheet->getCell("A{$row}")->getValue();
             if ($value === 'DIMENSIÓN 1') {
@@ -793,6 +853,9 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
             }
             if ($value === 'DIMENSIÓN 2') {
                 $dim2Row = $row + 1;
+            }
+            if ($value === 'DIMENSIÓN 3') {
+                $dim3Row = $row + 1;
             }
         }
 
@@ -818,11 +881,11 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
         for ($row = 1; $row <= $lastRow; $row++) {
             $value = $sheet->getCell("A{$row}")->getValue();
 
-            if ($value === 'DIMENSIÓN 1' || $value === 'DIMENSIÓN 2') {
+            if ($value === 'DIMENSIÓN 1' || $value === 'DIMENSIÓN 2' || $value === 'DIMENSIÓN 3') {
                 $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($sectionStyle);
-            } elseif ($row === $dim1Row || $row === $dim2Row) {
+            } elseif ($row === $dim1Row || $row === $dim2Row || $row === $dim3Row) {
                 $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($headerStyle);
-            } elseif (! empty($value) && $value !== $this->getDim1Label() && $value !== $this->getDim2Label()) {
+            } elseif (! empty($value) && $value !== $this->getDim1Label() && $value !== $this->getDim2Label() && $value !== $this->getDim3Label()) {
                 $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($dataStyle);
                 // Negrita en primera columna
                 $sheet->getStyle("A{$row}")->applyFromArray(['font' => ['bold' => true]]);

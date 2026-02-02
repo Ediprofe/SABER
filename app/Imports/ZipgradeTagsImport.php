@@ -30,6 +30,8 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
 
     private array $newTags = [];
 
+    private array $tagsForNormalization = [];
+
     public function __construct(int $examSessionId, array $tagMappings = [])
     {
         $this->examSessionId = $examSessionId;
@@ -196,30 +198,74 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
 
     /**
      * Asegura que todos los tags existan en la base de datos.
+     * Checks for TagNormalization and uses normalized values if available.
      */
     private function ensureTagsExist(array $uniqueTags): array
     {
         $tagIds = [];
 
-        foreach ($uniqueTags as $tagName) {
-            $tag = TagHierarchy::where('tag_name', $tagName)->first();
+        foreach ($uniqueTags as $csvTagName) {
+            // Step 1: Check for TagNormalization
+            $normalization = \App\Models\TagNormalization::findByCsvName($csvTagName);
 
-            if (! $tag && isset($this->tagMappings[$tagName])) {
-                // Create tag with mapping
-                $mapping = $this->tagMappings[$tagName];
+            // Determine the values to use
+            if ($normalization) {
+                // Use normalized values
+                $systemTagName = $normalization->tag_system_name;
+                $tagType = $normalization->tag_type;
+                $parentArea = $normalization->parent_area;
+            } else {
+                // No normalization exists - store for later normalization
+                $this->storeTagForNormalization($csvTagName);
+
+                // Use CSV values (fallback to tagMappings if available)
+                $systemTagName = $csvTagName;
+                if (isset($this->tagMappings[$csvTagName])) {
+                    $tagType = $this->tagMappings[$csvTagName]['tag_type'];
+                    $parentArea = $this->tagMappings[$csvTagName]['parent_area'] ?? null;
+                } else {
+                    $tagType = null;
+                    $parentArea = null;
+                }
+            }
+
+            // Step 2: Find or create TagHierarchy using system name
+            $tag = TagHierarchy::where('tag_name', $systemTagName)->first();
+
+            if (! $tag && $tagType !== null) {
+                // Create tag with determined values
                 $tag = TagHierarchy::create([
-                    'tag_name' => $tagName,
-                    'tag_type' => $mapping['tag_type'],
-                    'parent_area' => $mapping['parent_area'] ?? null,
+                    'tag_name' => $systemTagName,
+                    'tag_type' => $tagType,
+                    'parent_area' => $parentArea,
                 ]);
             }
 
+            // Map the CSV tag name to the tag ID (so callers can reference by CSV name)
             if ($tag) {
-                $tagIds[$tagName] = $tag->id;
+                $tagIds[$csvTagName] = $tag->id;
             }
         }
 
         return $tagIds;
+    }
+
+    /**
+     * Store a tag for later normalization when no normalization exists.
+     */
+    private function storeTagForNormalization(string $csvTagName): void
+    {
+        if (! in_array($csvTagName, $this->tagsForNormalization)) {
+            $this->tagsForNormalization[] = $csvTagName;
+        }
+    }
+
+    /**
+     * Get tags that were detected but have no normalization.
+     */
+    public function getTagsForNormalization(): array
+    {
+        return $this->tagsForNormalization;
     }
 
     /**

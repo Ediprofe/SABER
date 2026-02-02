@@ -47,6 +47,9 @@ class ZipgradeResults extends Page implements HasTable
                 return Enrollment::query()
                     ->where('academic_year_id', $this->record->academic_year_id)
                     ->where('status', 'ACTIVE')
+                    ->whereHas('studentAnswers.question.session', function ($query) {
+                        $query->where('exam_id', $this->record->id);
+                    })
                     ->with('student');
             })
             ->columns([
