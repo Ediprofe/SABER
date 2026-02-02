@@ -12,6 +12,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class StudentResource extends Resource
 {
@@ -87,29 +89,184 @@ class StudentResource extends Resource
                 ]),
             ])
             ->headerActions([
-                Tables\Actions\Action::make('import')
-                    ->label('Importar Estudiantes')
+                Tables\Actions\Action::make('download_template')
+                    ->label('Descargar Plantilla Excel')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('primary')
+                    ->action(function () {
+                        $spreadsheet = new Spreadsheet;
+                        $sheet = $spreadsheet->getActiveSheet();
+
+                        // Headers in Spanish (matching the import expectations)
+                        $headers = [
+                            'Nombre',
+                            'Apellido',
+                            'Documento',
+                            'Año',
+                            'Grado',
+                            'Grupo',
+                            'PIAR (SI/NO)',
+                            'Estado (ACTIVE/INACTIVE)',
+                        ];
+
+                        // Set headers in first row
+                        $col = 1;
+                        foreach ($headers as $label) {
+                            $sheet->setCellValueByColumnAndRow($col, 1, $label);
+                            $col++;
+                        }
+
+                        // Style headers (bold)
+                        $sheet->getStyle('A1:H1')->getFont()->setBold(true);
+
+                        // Example data (in the same order as headers)
+                        $exampleData = [
+                            ['SALOMÉ', 'ACEVEDO OCAMPO', '1234567890', 2026, 11, '1', 'NO', 'ACTIVE'],
+                            ['JUAN', 'PÉREZ GÓMEZ', '1098765432', 2026, 11, '2', 'SI', 'ACTIVE'],
+                        ];
+
+                        // Add data rows
+                        $row = 2;
+                        foreach ($exampleData as $data) {
+                            $col = 1;
+                            foreach ($data as $value) {
+                                $sheet->setCellValueByColumnAndRow($col, $row, $value);
+                                $col++;
+                            }
+                            $row++;
+                        }
+
+                        // Auto-size columns
+                        foreach (range('A', 'H') as $col) {
+                            $sheet->getColumnDimension($col)->setAutoSize(true);
+                        }
+
+                        // Create temporary file
+                        $tempFile = tempnam(sys_get_temp_dir(), 'plantilla_estudiantes_').'.xlsx';
+                        $writer = new Xlsx($spreadsheet);
+                        $writer->save($tempFile);
+
+                        return response()->download($tempFile, 'plantilla_estudiantes.xlsx', [
+                            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        ])->deleteFileAfterSend();
+                    }),
+                Tables\Actions\Action::make('import_with_preview')
+                    ->label('Importar Estudiantes (Con Verificación)')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('success')
+                    ->modalHeading('Importar Estudiantes - Verificación')
+                    ->modalSubmitActionLabel('Confirmar Importación')
                     ->form([
                         Forms\Components\FileUpload::make('file')
-                            ->label('Archivo Excel')
-                            ->acceptedFileTypes(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'])
-                            ->required(),
+                            ->label('Archivo Excel o CSV')
+                            ->acceptedFileTypes([
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'application/vnd.ms-excel',
+                                'text/csv',
+                                'text/plain',
+                            ])
+                            ->disk('public')
+                            ->directory('imports')
+                            ->visibility('private')
+                            ->required()
+                            ->helperText('Sube tu archivo y verifica que el sistema detecte correctamente los campos, especialmente PIAR (SI/NO)')
+                            ->live()
+                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                if (! $state) {
+                                    return;
+                                }
+
+                                $filePath = \Illuminate\Support\Facades\Storage::disk('public')->path($state);
+
+                                // Read first 5 rows for preview
+                                try {
+                                    $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($filePath);
+                                    $reader->setReadDataOnly(true);
+                                    $spreadsheet = $reader->load($filePath);
+                                    $sheet = $spreadsheet->getActiveSheet();
+                                    $data = $sheet->toArray(null, true, true, true);
+
+                                    // Get headers from first row
+                                    $headers = array_shift($data);
+                                    $preview = [];
+                                    $rowNum = 2;
+
+                                    foreach (array_slice($data, 0, 5) as $row) {
+                                        if (empty($row['A'])) {
+                                            continue;
+                                        }
+
+                                        // Try to find PIAR column
+                                        $piarValue = 'NO ENCONTRADO';
+                                        foreach ($headers as $col => $header) {
+                                            $headerUpper = strtoupper(trim($header));
+                                            if (strpos($headerUpper, 'PIAR') !== false) {
+                                                $piarValue = trim($row[$col] ?? '');
+                                                break;
+                                            }
+                                        }
+
+                                        $preview[] = [
+                                            'row' => $rowNum,
+                                            'nombre' => $row['A'] ?? '',
+                                            'apellido' => $row['B'] ?? '',
+                                            'piar_raw' => $piarValue,
+                                            'piar_detected' => strtoupper(trim($piarValue)) === 'SI' ? '✅ SI (PIAR)' : '❌ NO (No PIAR)',
+                                        ];
+                                        $rowNum++;
+                                    }
+
+                                    $set('preview_data', $preview);
+                                    $set('headers_found', implode(', ', array_values($headers)));
+
+                                } catch (\Exception $e) {
+                                    $set('preview_error', $e->getMessage());
+                                }
+                            }),
+
+                        Forms\Components\Section::make('Vista Previa (Primeras 5 filas)')
+                            ->schema([
+                                Forms\Components\Placeholder::make('headers_info')
+                                    ->label('Columnas detectadas')
+                                    ->content(fn ($get) => $get('headers_found') ?: 'Sube un archivo para ver las columnas'),
+
+                                Forms\Components\Repeater::make('preview_data')
+                                    ->label('Datos detectados')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('row')->label('Fila')->disabled(),
+                                        Forms\Components\TextInput::make('nombre')->label('Nombre')->disabled(),
+                                        Forms\Components\TextInput::make('apellido')->label('Apellido')->disabled(),
+                                        Forms\Components\TextInput::make('piar_raw')->label('PIAR (valor original)')->disabled(),
+                                        Forms\Components\TextInput::make('piar_detected')->label('PIAR (detectado)')->disabled(),
+                                    ])
+                                    ->columns(5)
+                                    ->addable(false)
+                                    ->deletable(false)
+                                    ->reorderable(false),
+
+                                Forms\Components\Placeholder::make('preview_instructions')
+                                    ->label('Instrucciones')
+                                    ->content('Verifica que la columna "PIAR (detectado)" muestre ✅ SI para estudiantes que deben ser PIAR. Si muestra ❌ NO para todos, hay un problema con la detección de la columna.')
+                                    ->columnSpanFull(),
+                            ])
+                            ->visible(fn ($get) => ! empty($get('preview_data'))),
                     ])
                     ->action(function (array $data): void {
                         try {
-                            Excel::import(new StudentsImport, $data['file']);
+                            $filePath = \Illuminate\Support\Facades\Storage::disk('public')->path($data['file']);
+                            Excel::import(new StudentsImport, $filePath);
 
                             Notification::make()
                                 ->title('Importación exitosa')
                                 ->success()
+                                ->persistent()
                                 ->send();
                         } catch (\Exception $e) {
                             Notification::make()
                                 ->title('Error en la importación')
                                 ->body($e->getMessage())
                                 ->danger()
+                                ->persistent()
                                 ->send();
                         }
                     }),

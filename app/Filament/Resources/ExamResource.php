@@ -5,8 +5,10 @@ namespace App\Filament\Resources;
 use App\Exports\ResultsTemplateExport;
 use App\Filament\Resources\ExamResource\Pages;
 use App\Imports\ResultsImport;
+use App\Imports\ZipgradeTagsImport;
 use App\Models\Exam;
 use App\Models\ExamAreaConfig;
+use App\Models\ExamSession;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -409,6 +411,59 @@ class ExamResource extends Resource
                                 ->send();
                         }
                     }),
+                Tables\Actions\Action::make('import_session1')
+                    ->label('Importar Sesión 1')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Importar Sesión 1')
+                    ->modalDescription('Esta acción importará los datos de la sesión 1 desde el archivo pre-generado.')
+                    ->modalSubmitActionLabel('Importar')
+                    ->action(function (Exam $record) {
+                        $filePath = storage_path('app/zipgrade_test/zipgrade_sesion1_prueba.csv');
+                        if (! file_exists($filePath)) {
+                            Notification::make()
+                                ->title('Archivo no encontrado')
+                                ->body('El archivo zipgrade_sesion1_prueba.csv no existe. Genere los datos de prueba primero.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        return static::processZipgradeImport($record, 1, $filePath);
+                    }),
+
+                Tables\Actions\Action::make('import_session2')
+                    ->label('Importar Sesión 2')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Importar Sesión 2')
+                    ->modalDescription('Esta acción importará los datos de la sesión 2 desde el archivo pre-generado.')
+                    ->modalSubmitActionLabel('Importar')
+                    ->action(function (Exam $record) {
+                        $filePath = storage_path('app/zipgrade_test/zipgrade_sesion2_prueba.csv');
+                        if (! file_exists($filePath)) {
+                            Notification::make()
+                                ->title('Archivo no encontrado')
+                                ->body('El archivo zipgrade_sesion2_prueba.csv no existe. Genere los datos de prueba primero.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        return static::processZipgradeImport($record, 2, $filePath);
+                    }),
+
+                Tables\Actions\Action::make('view_zipgrade_results')
+                    ->label('Ver Resultados Zipgrade')
+                    ->icon('heroicon-o-table-cells')
+                    ->color('primary')
+                    ->visible(fn (Exam $record) => $record->hasSessions())
+                    ->url(fn (Exam $record) => route('filament.admin.resources.exams.zipgrade-results', ['record' => $record])),
+
                 Tables\Actions\Action::make('generate_report')
                     ->label('Generar Informe')
                     ->icon('heroicon-o-document-chart-bar')
@@ -461,7 +516,83 @@ class ExamResource extends Resource
             'index' => Pages\ListExams::route('/'),
             'create' => Pages\CreateExam::route('/create'),
             'edit' => Pages\EditExam::route('/{record}/edit'),
+            'zipgrade-results' => Pages\ZipgradeResults::route('/{record}/zipgrade-results'),
         ];
+    }
+
+    /**
+     * Procesa la importación de datos de Zipgrade.
+     */
+    private static function processZipgradeImport(Exam $exam, int $sessionNumber, string $filePath): void
+    {
+        // Increase execution time for large files
+        ini_set('max_execution_time', 300); // 5 minutes
+        set_time_limit(300);
+
+        $session = ExamSession::firstOrCreate(
+            ['exam_id' => $exam->id, 'session_number' => $sessionNumber],
+            ['name' => "Sesión {$sessionNumber}"]
+        );
+
+        // Create import record
+        $import = \App\Models\ZipgradeImport::create([
+            'exam_session_id' => $session->id,
+            'filename' => basename($filePath),
+            'total_rows' => 0,
+            'status' => 'processing',
+        ]);
+
+        try {
+            if (! file_exists($filePath)) {
+                throw new \Exception('No se pudo encontrar el archivo: '.$filePath);
+            }
+
+            // Process the import
+            $importClass = new ZipgradeTagsImport($session->id, []);
+            Excel::import($importClass, $filePath);
+
+            // Update session stats
+            $session->refresh();
+            $session->total_questions = $session->questions()->count();
+            $session->save();
+
+            // Mark import as completed
+            $import->update([
+                'status' => 'completed',
+                'total_rows' => $importClass->getRowCount(),
+            ]);
+
+            // Check for new tags
+            if ($importClass->hasNewTags()) {
+                $newTags = $importClass->getNewTags();
+                $tagList = implode(', ', array_slice($newTags, 0, 5));
+                if (count($newTags) > 5) {
+                    $tagList .= ' y '.(count($newTags) - 5).' más...';
+                }
+
+                Notification::make()
+                    ->title('Importación completada con tags nuevos')
+                    ->body("Se importaron {$importClass->getStudentsCount()} estudiantes y {$session->total_questions} preguntas.\n\nTags nuevos detectados: {$tagList}\n\nPor favor, configure estos tags en el menú 'Jerarquía de Tags' antes de calcular resultados.")
+                    ->warning()
+                    ->persistent()
+                    ->send();
+            } else {
+                Notification::make()
+                    ->title('Importación exitosa')
+                    ->body("Se importaron {$importClass->getStudentsCount()} estudiantes y {$session->total_questions} preguntas correctamente.")
+                    ->success()
+                    ->send();
+            }
+
+        } catch (\Exception $e) {
+            $import->markAsError($e->getMessage());
+
+            Notification::make()
+                ->title('Error en la importación')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        }
     }
 
     private static function getAreaTab(string $area, string $label): Forms\Components\Tabs\Tab

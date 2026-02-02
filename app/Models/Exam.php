@@ -38,6 +38,21 @@ class Exam extends Model
         return $this->hasMany(ExamAreaConfig::class);
     }
 
+    public function sessions(): HasMany
+    {
+        return $this->hasMany(ExamSession::class);
+    }
+
+    public function getSession(int $number): ?ExamSession
+    {
+        return $this->sessions()->where('session_number', $number)->first();
+    }
+
+    public function hasSessions(): bool
+    {
+        return $this->sessions()->exists();
+    }
+
     /**
      * Check if this exam has detailed configuration for a specific area.
      */

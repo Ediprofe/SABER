@@ -10,7 +10,7 @@ class Student extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['code', 'first_name', 'last_name'];
+    protected $fillable = ['code', 'document_id', 'first_name', 'last_name'];
 
     public function enrollments(): HasMany
     {
@@ -20,5 +20,10 @@ class Student extends Model
     public function getFullNameAttribute(): string
     {
         return "{$this->first_name} {$this->last_name}";
+    }
+
+    public function scopeByDocument($query, string $document)
+    {
+        return $query->where('document_id', $document);
     }
 }

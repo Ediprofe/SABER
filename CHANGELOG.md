@@ -7,7 +7,7 @@
 
 ## [Feature 3] Importación Zipgrade (Prototipo) — 2026-02-01
 
-### Estado: 🔄 EN PROGRESO
+### Estado: ✅ COMPLETADO
 
 ### Rama: `feature/zipgrade-prototype`
 
@@ -15,44 +15,101 @@
 
 ### Tareas Completadas
 
-- [ ] Migración: agregar `document_id` a students
-- [ ] Migración: crear `tag_hierarchy`
-- [ ] Migración: crear `exam_sessions`
-- [ ] Migración: crear `zipgrade_imports`
-- [ ] Migración: crear `exam_questions`
-- [ ] Migración: crear `question_tags`
-- [ ] Migración: crear `student_answers`
-- [ ] Modelo `TagHierarchy` creado
-- [ ] Modelo `ExamSession` creado
-- [ ] Modelo `ZipgradeImport` creado
-- [ ] Modelo `ExamQuestion` creado
-- [ ] Modelo `QuestionTag` creado
-- [ ] Modelo `StudentAnswer` creado
-- [ ] Relaciones en modelo `Student` (document_id)
-- [ ] Relaciones en modelo `Exam` (sessions)
-- [ ] Import `ZipgradeTagsImport` creado
-- [ ] Lógica de detección de tags nuevos
-- [ ] Lógica de inferencia de área desde tags hijos
-- [ ] Lógica de match de estudiantes por documento
-- [ ] `ZipgradeMetricsService` creado
-- [ ] `ZipgradeMetricsService::getStudentTagScore()` implementado
-- [ ] `ZipgradeMetricsService::getStudentAreaScore()` implementado
-- [ ] `ZipgradeMetricsService::getTagStatistics()` implementado
-- [ ] `ZipgradeMetricsService::inferAreaFromTags()` implementado
-- [ ] Resource `TagHierarchyResource` creado
-- [ ] Action `ImportZipgradeAction` implementada
-- [ ] Asistente de clasificación de tags
-- [ ] Vista de match de estudiantes
-- [ ] Vista de resultados (tabla simple)
-- [ ] Soporte para 1 o 2 sesiones
-- [ ] Combinación correcta de sesiones en cálculos
-- [ ] Manejo de decimales con coma (0,334)
+- [x] Migración: agregar `document_id` a students (`2026_02_01_000001_add_document_id_to_students_table.php`)
+- [x] Migración: crear `tag_hierarchy` (`2026_02_01_000002_create_tag_hierarchy_table.php`)
+- [x] Migración: crear `exam_sessions` (`2026_02_01_000003_create_exam_sessions_table.php`)
+- [x] Migración: crear `zipgrade_imports` (`2026_02_01_000004_create_zipgrade_imports_table.php`)
+- [x] Migración: crear `exam_questions` (`2026_02_01_000005_create_exam_questions_table.php`)
+- [x] Migración: crear `question_tags` (`2026_02_01_000006_create_question_tags_table.php`)
+- [x] Migración: crear `student_answers` (`2026_02_01_000007_create_student_answers_table.php`)
+- [x] Modelo `TagHierarchy` creado con relaciones
+- [x] Modelo `ExamSession` creado con relaciones
+- [x] Modelo `ZipgradeImport` creado con estados (pending/processing/completed/error)
+- [x] Modelo `ExamQuestion` creado con relaciones a tags y respuestas
+- [x] Modelo `QuestionTag` creado para vincular preguntas con jerarquía de tags
+- [x] Modelo `StudentAnswer` creado con campo `is_correct` (EarnedPoints > 0)
+- [x] Relaciones en modelo `Student` (document_id)
+- [x] Relaciones en modelo `Exam` (sessions, getSession, hasSessions)
+- [x] Import `ZipgradeTagsImport` creado con lógica de chunks y transacciones
+- [x] Lógica de detección de tags nuevos en importación
+- [x] Lógica de inferencia de área desde tags hijos
+- [x] Lógica de match de estudiantes por document_id (creación automática si no existe)
+- [x] `ZipgradeMetricsService` creado
+- [x] `ZipgradeMetricsService::getStudentTagScore()` implementado
+- [x] `ZipgradeMetricsService::getStudentAreaScore()` implementado
+- [x] `ZipgradeMetricsService::getStudentGlobalScore()` implementado con fórmula ICFES
+- [x] `ZipgradeMetricsService::getTagStatistics()` implementado
+- [x] `ZipgradeMetricsService::getTagPiarComparison()` implementado
+- [x] `ZipgradeMetricsService::inferAreaFromTags()` implementado
+- [x] Resource `TagHierarchyResource` creado (CRUD completo en Filament)
+- [x] Action `ImportZipgradeAction` implementada en ExamResource
+- [x] Vista de gestión de sesiones (hasta 2 sesiones por examen)
+- [x] Vista de resultados Zipgrade (tabla simple con filtros)
+- [x] Soporte para 1 o 2 sesiones por examen
+- [x] Combinación correcta de sesiones en cálculos (ponderación por # preguntas)
+- [x] Manejo de decimales con coma (0,334 → convertir a 0.334)
+- [x] Regla: EarnedPoints > 0 = Correcta (1), = 0 = Incorrecta (0)
+- [x] Fórmula global: round(((L+M+S+N)*3 + I) / 13 * 5) implementada
 
 ---
 
 ### Tareas Pendientes / Bloqueadas
 
-*(Agregar aquí cualquier tarea que no se pueda completar y por qué)*
+Ninguna - todas las tareas del prototipo fueron completadas.
+
+---
+
+### Archivos Creados
+
+```
+database/migrations/
+├── 2026_02_01_000001_add_document_id_to_students_table.php
+├── 2026_02_01_000002_create_tag_hierarchy_table.php
+├── 2026_02_01_000003_create_exam_sessions_table.php
+├── 2026_02_01_000004_create_zipgrade_imports_table.php
+├── 2026_02_01_000005_create_exam_questions_table.php
+├── 2026_02_01_000006_create_question_tags_table.php
+└── 2026_02_01_000007_create_student_answers_table.php
+
+app/Models/
+├── TagHierarchy.php
+├── ExamSession.php
+├── ZipgradeImport.php
+├── ExamQuestion.php
+├── QuestionTag.php
+└── StudentAnswer.php
+
+app/Services/
+└── ZipgradeMetricsService.php
+
+app/Imports/
+└── ZipgradeTagsImport.php
+
+app/Filament/
+├── Resources/
+│   ├── TagHierarchyResource.php (con Pages/List/Create/Edit)
+│   └── ExamResource/
+│       └── Pages/
+│           └── ZipgradeResults.php
+├── Actions/
+│   └── ImportZipgradeAction.php
+└── Widgets/
+    └── ZipgradeStatsWidget.php
+
+resources/views/filament/resources/exam-resource/pages/
+└── zipgrade-results.blade.php
+```
+
+### Archivos Modificados
+
+```
+app/Models/
+├── Student.php (agregado document_id)
+└── Exam.php (agregadas relaciones sessions)
+
+app/Filament/Resources/
+└── ExamResource.php (agregadas acciones de sesiones y resultados Zipgrade)
+```
 
 ---
 

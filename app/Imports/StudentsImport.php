@@ -7,6 +7,7 @@ use App\Models\Enrollment;
 use App\Models\Student;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 
@@ -14,90 +15,137 @@ class StudentsImport implements ToCollection, WithHeadingRow
 {
     private array $errors = [];
 
+    private array $columnMap = [];
+
     public function collection(Collection $rows)
     {
+        if ($rows->isEmpty()) {
+            throw new \Exception('El archivo está vacío');
+        }
+
+        // Detectar columnas de la primera fila
+        $firstRow = $rows->first();
+        $this->detectColumns($firstRow);
+
+        Log::info('Columnas detectadas: '.json_encode($this->columnMap));
+
         DB::beginTransaction();
 
         try {
             foreach ($rows as $index => $row) {
-                $rowNum = $index + 2; // Excel row number (1-based + header)
+                $rowNum = $index + 2;
+
+                // Get values using detected column indices
+                $firstName = $this->getValueFromRow($row, ['nombre', 'name', 'first_name', 'FirstName']);
+                $lastName = $this->getValueFromRow($row, ['apellido', 'lastname', 'last_name', 'LastName']);
+                $documentId = $this->getValueFromRow($row, ['documento', 'document', 'document_id', 'Documento']);
+                $academicYear = $this->getValueFromRow($row, ['año', 'ano', 'year', 'academic_year', 'Año']);
+                $grade = $this->getValueFromRow($row, ['grado', 'grade', 'Grado']);
+                $group = $this->getValueFromRow($row, ['grupo', 'group', 'Grupo']);
+
+                // Para PIAR, buscar específicamente la columna que contiene 'PIAR'
+                $isPiar = $this->getPiarValue($row);
+
+                $status = $this->getValueFromRow($row, ['estado', 'status', 'Estado']) ?? 'ACTIVE';
+
+                Log::info("Row {$rowNum}: {$firstName} {$lastName} - PIAR='{$isPiar}'");
 
                 // Validate required fields
-                if (empty($row['first_name'])) {
-                    $this->errors[] = "Fila {$rowNum}: El campo 'first_name' es requerido.";
+                if (empty($firstName)) {
+                    $this->errors[] = "Fila {$rowNum}: El campo 'Nombre' es requerido.";
 
                     continue;
                 }
-                if (empty($row['last_name'])) {
-                    $this->errors[] = "Fila {$rowNum}: El campo 'last_name' es requerido.";
+                if (empty($lastName)) {
+                    $this->errors[] = "Fila {$rowNum}: El campo 'Apellido' es requerido.";
 
                     continue;
                 }
-                if (empty($row['academic_year'])) {
-                    $this->errors[] = "Fila {$rowNum}: El campo 'academic_year' es requerido.";
+                if (empty($academicYear)) {
+                    $this->errors[] = "Fila {$rowNum}: El campo 'Año' es requerido.";
 
                     continue;
                 }
-                if (empty($row['grade'])) {
-                    $this->errors[] = "Fila {$rowNum}: El campo 'grade' es requerido.";
+                if (empty($grade)) {
+                    $this->errors[] = "Fila {$rowNum}: El campo 'Grado' es requerido.";
 
                     continue;
                 }
-                if (empty($row['group'])) {
-                    $this->errors[] = "Fila {$rowNum}: El campo 'group' es requerido.";
+                if (empty($group)) {
+                    $this->errors[] = "Fila {$rowNum}: El campo 'Grupo' es requerido.";
 
                     continue;
                 }
 
                 // Validate grade
-                if (! in_array($row['grade'], [10, 11])) {
+                if (! in_array((int) $grade, [10, 11])) {
                     $this->errors[] = "Fila {$rowNum}: El grado debe ser 10 u 11.";
 
                     continue;
                 }
 
                 // Find or create academic year
-                $academicYear = AcademicYear::firstOrCreate(
-                    ['year' => $row['academic_year']],
-                    ['year' => $row['academic_year']]
+                $academicYearModel = AcademicYear::firstOrCreate(
+                    ['year' => (int) $academicYear],
+                    ['year' => (int) $academicYear]
                 );
 
-                // Check if student exists (match by first_name + last_name)
-                $student = Student::where('first_name', $row['first_name'])
-                    ->where('last_name', $row['last_name'])
-                    ->first();
-
+                // Check if student exists
+                $student = null;
+                if (! empty($documentId)) {
+                    $student = Student::where('document_id', $documentId)->first();
+                }
                 if (! $student) {
-                    // Generate student code based on graduation year
-                    $graduationYear = $row['academic_year'] + (11 - $row['grade']);
-                    $code = $this->generateStudentCode($graduationYear);
-
-                    $student = Student::create([
-                        'code' => $code,
-                        'first_name' => $row['first_name'],
-                        'last_name' => $row['last_name'],
-                    ]);
+                    $student = Student::where('first_name', $firstName)
+                        ->where('last_name', $lastName)
+                        ->first();
                 }
 
-                // Check if enrollment already exists for this year
+                // Create or update student
+                if (! $student) {
+                    $code = ! empty($documentId) ? $documentId : $this->generateStudentCode((int) $academicYear + (11 - (int) $grade));
+
+                    $studentData = [
+                        'code' => $code,
+                        'first_name' => $firstName,
+                        'last_name' => $lastName,
+                    ];
+
+                    if (! empty($documentId)) {
+                        $studentData['document_id'] = $documentId;
+                    }
+
+                    $student = Student::create($studentData);
+                } elseif (! empty($documentId) && empty($student->document_id)) {
+                    $student->document_id = $documentId;
+                    $student->save();
+                }
+
+                // Check if enrollment already exists
                 $existingEnrollment = Enrollment::where('student_id', $student->id)
-                    ->where('academic_year_id', $academicYear->id)
+                    ->where('academic_year_id', $academicYearModel->id)
                     ->first();
 
                 if ($existingEnrollment) {
-                    $this->errors[] = "Fila {$rowNum}: El estudiante ya tiene una matrícula en el año {$row['academic_year']}.";
+                    $this->errors[] = "Fila {$rowNum}: El estudiante {$firstName} {$lastName} ya tiene una matrícula en el año {$academicYear}.";
 
                     continue;
                 }
 
+                // Procesar PIAR
+                $piarValue = strtoupper(trim($isPiar ?? ''));
+                $isPiarBoolean = ($piarValue === 'SI');
+
+                Log::info("Row {$rowNum}: PIAR processed='{$piarValue}', isPIAR=".($isPiarBoolean ? 'true' : 'false'));
+
                 // Create enrollment
                 Enrollment::create([
                     'student_id' => $student->id,
-                    'academic_year_id' => $academicYear->id,
-                    'grade' => $row['grade'],
-                    'group' => $row['group'],
-                    'is_piar' => strtoupper($row['is_piar'] ?? '') === 'SI',
-                    'status' => strtoupper($row['status'] ?? 'ACTIVE'),
+                    'academic_year_id' => $academicYearModel->id,
+                    'grade' => (int) $grade,
+                    'group' => (string) $group,
+                    'is_piar' => $isPiarBoolean,
+                    'status' => strtoupper(trim($status ?? 'ACTIVE')),
                 ]);
             }
 
@@ -107,10 +155,98 @@ class StudentsImport implements ToCollection, WithHeadingRow
             }
 
             DB::commit();
+            Log::info('Import completed successfully. Total rows: '.$rows->count());
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Import failed: '.$e->getMessage());
             throw $e;
         }
+    }
+
+    /**
+     * Detecta las columnas del Excel basándose en la primera fila
+     */
+    private function detectColumns($firstRow): void
+    {
+        foreach ($firstRow as $key => $value) {
+            $header = strtoupper(trim($value));
+
+            // Mapear por nombre de columna común
+            if (strpos($header, 'NOMBRE') !== false && strpos($header, 'APELLIDO') === false) {
+                $this->columnMap['nombre'] = $key;
+            } elseif (strpos($header, 'APELLIDO') !== false) {
+                $this->columnMap['apellido'] = $key;
+            } elseif (strpos($header, 'DOCUMENTO') !== false || strpos($header, 'ID') !== false) {
+                $this->columnMap['documento'] = $key;
+            } elseif (strpos($header, 'AÑO') !== false || strpos($header, 'ANO') !== false || strpos($header, 'YEAR') !== false) {
+                $this->columnMap['año'] = $key;
+            } elseif (strpos($header, 'GRADO') !== false || strpos($header, 'GRADE') !== false) {
+                $this->columnMap['grado'] = $key;
+            } elseif (strpos($header, 'GRUPO') !== false || strpos($header, 'GROUP') !== false) {
+                $this->columnMap['grupo'] = $key;
+            } elseif (strpos($header, 'PIAR') !== false) {
+                $this->columnMap['piar'] = $key;
+                Log::info("Columna PIAR detectada: key='{$key}', header='{$value}'");
+            } elseif (strpos($header, 'ESTADO') !== false || strpos($header, 'STATUS') !== false) {
+                $this->columnMap['estado'] = $key;
+            }
+        }
+    }
+
+    /**
+     * Obtiene el valor de PIAR buscando específicamente la columna PIAR
+     */
+    private function getPiarValue($row): ?string
+    {
+        // Si detectamos la columna PIAR, usar esa key específica
+        if (isset($this->columnMap['piar'])) {
+            $piarKey = $this->columnMap['piar'];
+            $value = $row[$piarKey] ?? null;
+            if ($value !== null && $value !== '') {
+                return trim($value);
+            }
+        }
+
+        // Fallback: buscar en todas las keys que contengan 'piar'
+        foreach ($row as $key => $value) {
+            if (stripos($key, 'piar') !== false) {
+                if ($value !== null && $value !== '') {
+                    return trim($value);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Obtiene valor de la fila buscando en múltiples posibles nombres de columna
+     */
+    private function getValueFromRow($row, array $possibleNames): ?string
+    {
+        // Primero intentar con las columnas mapeadas
+        foreach ($possibleNames as $name) {
+            if (isset($this->columnMap[$name])) {
+                $key = $this->columnMap[$name];
+                $value = $row[$key] ?? null;
+                if ($value !== null && $value !== '') {
+                    return trim($value);
+                }
+            }
+        }
+
+        // Fallback: buscar en todas las keys de la fila
+        foreach ($possibleNames as $name) {
+            foreach ($row as $key => $value) {
+                if (stripos($key, $name) !== false) {
+                    if ($value !== null && $value !== '') {
+                        return trim($value);
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     private function generateStudentCode(int $graduationYear): string
