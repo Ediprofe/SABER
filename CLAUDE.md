@@ -674,7 +674,8 @@ class DetailAreaStatistics {
 | Feature 2: Análisis Detallado | ✅ Completado | 2026-01-30 | main |
 | Feature 3: Importación Zipgrade - Fase 1 (Importación) | ✅ Completado | 2026-02-01 | feature/zipgrade-prototype |
 | Feature 3: Importación Zipgrade - Fase 2 (Exportaciones) | ✅ Completado | 2026-02-01 | feature/zipgrade-prototype |
-| Feature 3: Importación Zipgrade - Fase 3 (Análisis por Ítem) | 🔄 Pendiente | — | feature/zipgrade-prototype |
+| Feature 3: Importación Zipgrade - Fase 3 (Análisis por Ítem) | ✅ Completado | 2026-02-02 | feature/zipgrade-prototype |
+| Feature 3: Importación Zipgrade - Fase 3.1 (Correcciones Críticas) | 🔴 PENDIENTE | — | feature/zipgrade-prototype |
 
 ---
 
@@ -1919,3 +1920,332 @@ Componente/Tipo Texto | 11-1   | 11-2   | 11-3   | Promedio
    - Difícil: <40% de acierto
 
 6. **Ubicación de las tablas en hojas de área:** Las dos tablas van una debajo de la otra, con un espacio de 2 filas entre ellas. Títulos en negrita.
+
+---
+
+# 🔴 CORRECCIONES CRÍTICAS — FASE 3.1
+
+> **Estado:** PENDIENTE
+> **Rama:** `feature/zipgrade-prototype`
+> **Prioridad:** CRÍTICA (bloquea uso con datos reales)
+> **Fecha:** 2026-02-02
+
+---
+
+## 🎯 Contexto
+
+Durante la revisión pre-producción se detectaron **3 problemas críticos** que impiden usar el sistema con datos reales de Zipgrade. Estas correcciones deben implementarse ANTES de hacer el reset de la base de datos.
+
+---
+
+## 🐛 CORRECCIÓN 1: Import de Stats — Columnas del Excel Real
+
+### Problema
+
+El `ZipgradeQuestionStatsImport.php` actual busca columnas que **NO coinciden** con el formato real del Excel de Zipgrade.
+
+**Excel real de Zipgrade:**
+```
+Quiz_Name | Class | Key | Question_Number | Primary_Answer | # Correct | % Correct | Discriminant Factor | Response 1 | Response 1 % | Response 2 | Response 2 % | Response 3 | Response 3 % | Response 4 | Response 4 %
+```
+
+**Ejemplo de datos:**
+```
+2026-Sim2 sesión 2 | 1101, 1102, 1103 | Primary Key | 1 | B | 51.0 | 78.46 | 0.385 | B | 78.46 | A | 7.69 | C | 6.15 | D | 4.62
+```
+
+### Mapeo de Columnas Requerido
+
+| Columna Excel Real | Columna Laravel (snake_case) | Uso |
+|--------------------|------------------------------|-----|
+| `Question_Number` | `question_number` | Número de pregunta |
+| `Primary_Answer` | `primary_answer` | Respuesta correcta (A, B, C, D) |
+| `% Correct` | `correct` | Porcentaje de acierto global |
+| `Response 1` | `response_1` | **Letra** de la 1° respuesta más elegida |
+| `Response 1 %` | `response_1_` | **Porcentaje** de la 1° respuesta |
+| `Response 2` | `response_2` | Letra de la 2° respuesta |
+| `Response 2 %` | `response_2_` | Porcentaje de la 2° respuesta |
+| `Response 3` | `response_3` | Letra de la 3° respuesta |
+| `Response 3 %` | `response_3_` | Porcentaje de la 3° respuesta |
+| `Response 4` | `response_4` | Letra de la 4° respuesta |
+| `Response 4 %` | `response_4_` | Porcentaje de la 4° respuesta |
+
+### Solución Requerida
+
+Modificar `app/Imports/ZipgradeQuestionStatsImport.php` para leer:
+- Letras desde `response_1`, `response_2`, `response_3`, `response_4`
+- Porcentajes desde `response_1_`, `response_2_`, `response_3_`, `response_4_`
+- Los datos YA vienen ordenados por % descendente desde Zipgrade
+
+### Validación
+
+- [ ] Importar el Excel real de stats de sesión
+- [ ] Verificar que `correct_answer` se guarda correctamente (A, B, C, D)
+- [ ] Verificar que `response_1` tiene la letra correcta
+- [ ] Verificar que `response_1_pct` tiene el porcentaje correcto
+- [ ] Verificar en la hoja "Análisis por Pregunta" del Excel exportado
+
+---
+
+## 🐛 CORRECCIÓN 2: Modal Interactivo para Clasificar Tags Nuevos
+
+### Problema
+
+El flujo actual de importación de tags tiene un problema crítico:
+
+**Código actual en `ZipgradeTagsImport.php:235`:**
+```php
+if (! $tag && $tagType !== null) {
+    // Solo crea el tag SI tiene tipo definido
+    $tag = TagHierarchy::create([...]);
+}
+```
+
+**El problema:** Si un tag del CSV (ej: `Interpretación`, `Aleatorio`, `Numerico`) no tiene normalización, entonces `$tagType = null` y **el tag NO se crea en `tag_hierarchy`**.
+
+**Consecuencia:** Los tags NO se vinculan a las preguntas y los cálculos de métricas **FALLAN**.
+
+### Solución Requerida — Flujo en 2 Pasos
+
+#### Paso 1: Pre-análisis del CSV (sin importar)
+
+Agregar método `analyzeFile()` en `ZipgradeTagsImport` que:
+1. Lee el CSV sin importar datos
+2. Extrae todos los tags únicos
+3. Verifica cuáles NO existen en `tag_hierarchy` ni `tag_normalizations`
+4. Retorna lista de tags que necesitan clasificación
+
+#### Paso 2: Página de Clasificación en Filament
+
+Crear `app/Filament/Resources/ExamResource/Pages/ClassifyTags.php`:
+
+**Interfaz:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ⚠️ Tags Nuevos Detectados                                          │
+├─────────────────────────────────────────────────────────────────────┤
+│  │ Tag del CSV        │ Tipo            │ Área Padre       │ Guardar│
+│  ├────────────────────┼─────────────────┼──────────────────┼────────│
+│  │ Interpretación     │ [Competencia ▼] │ [Matemáticas ▼]  │   ☑    │
+│  │ Aleatorio          │ [Componente ▼]  │ [Matemáticas ▼]  │   ☑    │
+│  │ Numerico           │ [Componente ▼]  │ [Matemáticas ▼]  │   ☑    │
+│  │ Formulación        │ [Competencia ▼] │ [Matemáticas ▼]  │   ☑    │
+│  └────────────────────┴─────────────────┴──────────────────┴────────┘
+│                                                                     │
+│  ☑ Guardar normalización = crea entrada en tag_normalizations      │
+│                                                                     │
+│                              [Cancelar]  [Continuar Importación]    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Flujo:**
+1. Usuario sube CSV
+2. Sistema analiza y detecta tags nuevos
+3. Si hay tags nuevos → mostrar página de clasificación
+4. Usuario clasifica cada tag (tipo + área padre)
+5. Sistema crea tags en `tag_hierarchy` y opcionalmente en `tag_normalizations`
+6. Importación continúa normalmente
+
+### Archivos a Crear/Modificar
+
+| Archivo | Acción |
+|---------|--------|
+| `app/Imports/ZipgradeTagsImport.php` | Agregar método `analyzeFile()` |
+| `app/Filament/Resources/ExamResource.php` | Modificar acciones `import_session1/2` para flujo de 2 pasos |
+| `app/Filament/Resources/ExamResource/Pages/ClassifyTags.php` | **CREAR** — Página Livewire |
+| `resources/views/filament/resources/exam-resource/pages/classify-tags.blade.php` | **CREAR** — Vista Blade |
+
+### Validación
+
+- [ ] Al importar CSV con tags nuevos, se muestra la página de clasificación
+- [ ] Puedo seleccionar tipo y área padre para cada tag
+- [ ] Si marco "Guardar normalización", se crea en `tag_normalizations`
+- [ ] Al hacer clic en "Continuar", la importación se completa exitosamente
+- [ ] Los tags quedan vinculados correctamente a las preguntas
+- [ ] Los cálculos de métricas funcionan correctamente
+
+---
+
+## 🐛 CORRECCIÓN 3: StudentID de Zipgrade — Campo en Estudiantes
+
+### Problema
+
+El `StudentID` en el CSV de Zipgrade es un **ID interno de Zipgrade**, NO el documento de identidad del estudiante. Zipgrade no permite cambiar este campo por el documento real.
+
+**CSV de Zipgrade:**
+```
+Tag,StudentFirstName,StudentLastName,StudentID,...
+Interpretación,MANUELA,AGUDELO BETANCUR,1,...
+```
+
+El `StudentID=1` es un identificador que asigna Zipgrade, no la cédula.
+
+### Solución Requerida
+
+Agregar campo `zipgrade_id` a la tabla `students` y al Excel de carga de estudiantes.
+
+#### 1. Migración
+
+Crear migración para agregar campo:
+
+```php
+// database/migrations/XXXX_XX_XX_add_zipgrade_id_to_students_table.php
+Schema::table('students', function (Blueprint $table) {
+    $table->string('zipgrade_id', 20)->nullable()->after('document_id');
+    $table->index('zipgrade_id');
+});
+```
+
+#### 2. Modelo Student
+
+Agregar `zipgrade_id` a `$fillable`:
+
+```php
+protected $fillable = [
+    'code',
+    'document_id',
+    'zipgrade_id',  // NUEVO
+    'first_name',
+    'last_name',
+];
+```
+
+#### 3. Excel de Carga de Estudiantes — Nuevo Formato
+
+**Formato actual:**
+```
+Nombre | Apellido | Documento | Año | Grado | Grupo | PIAR (SI/NO) | Estado (ACTIVE/INACTIVE)
+```
+
+**Formato nuevo:**
+```
+Nombre | Apellido | Documento | ZipgradeID | Año | Grado | Grupo | PIAR (SI/NO) | Estado (ACTIVE/INACTIVE)
+```
+
+**Ejemplo:**
+```
+MANUELA | AGUDELO BETANCUR | 1234567890 | 1 | 2026 | 11 | 11-1 | NO | ACTIVE
+JUAN    | PÉREZ GÓMEZ      | 1098765432 | 2 | 2026 | 11 | 11-1 | SI | ACTIVE
+```
+
+El `ZipgradeID` es el número que Zipgrade asigna al estudiante en ese quiz.
+
+#### 4. Modificar Import de Estudiantes
+
+Actualizar el import de estudiantes para leer la columna `ZipgradeID`:
+
+```php
+// En el import de estudiantes existente
+$student = Student::updateOrCreate(
+    ['document_id' => $row['documento']],
+    [
+        'first_name' => $row['nombre'],
+        'last_name' => $row['apellido'],
+        'zipgrade_id' => $row['zipgradeid'] ?? null,  // NUEVO
+    ]
+);
+```
+
+#### 5. Modificar ZipgradeTagsImport — Match por zipgrade_id
+
+Cambiar la lógica de match de estudiantes en `ZipgradeTagsImport.php`:
+
+**Código actual:**
+```php
+$student = Student::where('document_id', $docId)->first();
+```
+
+**Código nuevo:**
+```php
+// Primero intentar por zipgrade_id
+$student = Student::where('zipgrade_id', $zipgradeId)->first();
+
+// Si no encuentra, intentar por nombre (fallback)
+if (!$student) {
+    $student = Student::where('first_name', $firstName)
+        ->where('last_name', $lastName)
+        ->first();
+}
+```
+
+### Archivos a Crear/Modificar
+
+| Archivo | Acción |
+|---------|--------|
+| `database/migrations/XXXX_add_zipgrade_id_to_students.php` | **CREAR** |
+| `app/Models/Student.php` | Agregar `zipgrade_id` a fillable |
+| Import de estudiantes (ubicar archivo) | Agregar lectura de columna `ZipgradeID` |
+| `app/Imports/ZipgradeTagsImport.php` | Cambiar match de `document_id` a `zipgrade_id` |
+| `app/Exports/` (plantilla de estudiantes) | Agregar columna `ZipgradeID` |
+
+### Validación
+
+- [ ] La migración agrega el campo `zipgrade_id` a students
+- [ ] El Excel de carga de estudiantes acepta la columna `ZipgradeID`
+- [ ] Al cargar estudiantes, el `zipgrade_id` se guarda correctamente
+- [ ] Al importar CSV de Zipgrade, el match se hace por `zipgrade_id`
+- [ ] Las respuestas de estudiantes se vinculan correctamente
+
+---
+
+## 📦 Entregables — Fase 3.1
+
+| # | Entregable | Ubicación | Prioridad |
+|---|------------|-----------|-----------|
+| 1 | Corregir mapeo de columnas en stats import | `app/Imports/ZipgradeQuestionStatsImport.php` | CRÍTICA |
+| 2 | Método `analyzeFile()` para pre-análisis | `app/Imports/ZipgradeTagsImport.php` | CRÍTICA |
+| 3 | Página de clasificación de tags | `app/Filament/Resources/ExamResource/Pages/ClassifyTags.php` | CRÍTICA |
+| 4 | Vista Blade para clasificación | `resources/views/filament/.../classify-tags.blade.php` | CRÍTICA |
+| 5 | Modificar acciones de importación | `app/Filament/Resources/ExamResource.php` | CRÍTICA |
+| 6 | Migración `zipgrade_id` en students | `database/migrations/` | CRÍTICA |
+| 7 | Actualizar modelo Student | `app/Models/Student.php` | CRÍTICA |
+| 8 | Actualizar import de estudiantes | Import existente | CRÍTICA |
+| 9 | Actualizar match en ZipgradeTagsImport | `app/Imports/ZipgradeTagsImport.php` | CRÍTICA |
+| 10 | Actualizar plantilla Excel de estudiantes | Export existente | CRÍTICA |
+
+---
+
+## ✅ Definition of Done — Fase 3.1
+
+### Corrección 1: Stats Import
+- [ ] Import de stats lee correctamente: `Response 1`, `Response 1 %`, etc.
+- [ ] Letras y porcentajes se guardan en campos correctos
+
+### Corrección 2: Modal de Tags
+- [ ] Al importar CSV con tags nuevos, se muestra página de clasificación
+- [ ] El usuario puede clasificar cada tag (tipo + área padre)
+- [ ] Opción de guardar normalización funciona correctamente
+- [ ] Después de clasificar, la importación continúa exitosamente
+- [ ] Los tags quedan vinculados a las preguntas en `question_tags`
+
+### Corrección 3: ZipgradeID
+- [ ] Campo `zipgrade_id` existe en tabla students
+- [ ] Excel de carga de estudiantes tiene columna `ZipgradeID`
+- [ ] Import de estudiantes guarda el `zipgrade_id`
+- [ ] ZipgradeTagsImport hace match por `zipgrade_id`
+- [ ] Las respuestas de estudiantes se vinculan correctamente
+
+### General
+- [ ] Las métricas por competencia/componente calculan correctamente
+- [ ] Las 10 hojas del Excel siguen funcionando
+- [ ] El sistema funciona con datos reales de Zipgrade
+
+---
+
+## 📝 Notas para el Agente Ejecutor
+
+1. **Prioridad:** Estas correcciones son BLOQUEANTES. Sin ellas, el sistema no puede usarse con datos reales.
+
+2. **Orden de implementación sugerido:**
+   1. Corrección 3 (ZipgradeID) — es la base para el match de estudiantes
+   2. Corrección 1 (Stats Import) — es independiente y simple
+   3. Corrección 2 (Modal de Tags) — es la más compleja
+
+3. **Testing:**
+   - Usar los archivos CSV y Excel reales que proporcionó el usuario
+   - No confiar en los datos de prueba generados
+
+4. **No romper lo existente:**
+   - Las 10 hojas del Excel deben seguir funcionando
+   - El flujo para tags que YA existen debe seguir funcionando (sin mostrar modal)
+   - Estudiantes sin `zipgrade_id` deben poder cargarse (campo nullable)

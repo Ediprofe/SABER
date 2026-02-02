@@ -7,7 +7,11 @@
 
 ## [Feature 3] Importación Zipgrade (Prototipo) — 2026-02-02
 
-### Estado: ✅ COMPLETADO (Fase 1 + Fase 2 + Fase 3)
+### Estado: 🔴 PENDIENTE Fase 3.1 (Correcciones Críticas antes de producción)
+
+> **IMPORTANTE:** Las Fases 1, 2 y 3 están completadas con datos de prueba, pero se detectaron 3 problemas críticos que impiden usar datos reales. Ver sección "Fase 3.1" al final.
+
+### Estado Fases: ✅ Fase 1 + ✅ Fase 2 + ✅ Fase 3 + 🔴 Fase 3.1
 
 ### Rama: `feature/zipgrade-prototype`
 
@@ -134,9 +138,30 @@
 
 ---
 
-### Tareas Pendientes / Bloqueadas
+### Tareas Pendientes — Fase 3.1 (Correcciones Críticas)
 
-Ninguna - todas las tareas fueron completadas.
+> **BLOQUEANTE:** Estas correcciones deben completarse ANTES de usar datos reales.
+
+#### Corrección 1: Import de Stats — Columnas del Excel Real
+- [ ] Modificar `ZipgradeQuestionStatsImport.php` para leer columnas correctas
+- [ ] `Response 1` → letra, `Response 1 %` → porcentaje (no reconstruir)
+- [ ] Probar con Excel real de Zipgrade
+
+#### Corrección 2: Modal Interactivo para Clasificar Tags Nuevos
+- [ ] Crear método `analyzeFile()` en `ZipgradeTagsImport.php`
+- [ ] Crear página `ClassifyTags.php` en Filament
+- [ ] Crear vista Blade `classify-tags.blade.php`
+- [ ] Modificar acciones `import_session1/2` para flujo de 2 pasos
+- [ ] Si hay tags nuevos → mostrar modal → clasificar → continuar import
+
+#### Corrección 3: ZipgradeID — Campo en Estudiantes
+- [ ] Crear migración para agregar `zipgrade_id` a tabla `students`
+- [ ] Actualizar modelo `Student.php` ($fillable)
+- [ ] Actualizar import de estudiantes para leer columna `ZipgradeID`
+- [ ] Actualizar plantilla Excel de estudiantes (agregar columna)
+- [ ] Modificar `ZipgradeTagsImport.php` para match por `zipgrade_id`
+
+**Ver documentación completa en CLAUDE.md sección "CORRECCIONES CRÍTICAS — FASE 3.1"**
 
 ---
 
