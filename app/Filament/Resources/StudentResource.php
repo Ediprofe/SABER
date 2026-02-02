@@ -98,10 +98,12 @@ class StudentResource extends Resource
                         $sheet = $spreadsheet->getActiveSheet();
 
                         // Headers in Spanish (matching the import expectations)
+                        // INCLUYE ZipgradeID - campo nuevo para vinculación con Zipgrade
                         $headers = [
                             'Nombre',
                             'Apellido',
                             'Documento',
+                            'ZipgradeID',
                             'Año',
                             'Grado',
                             'Grupo',
@@ -117,12 +119,13 @@ class StudentResource extends Resource
                         }
 
                         // Style headers (bold)
-                        $sheet->getStyle('A1:H1')->getFont()->setBold(true);
+                        $sheet->getStyle('A1:I1')->getFont()->setBold(true);
 
                         // Example data (in the same order as headers)
+                        // ZipgradeID = ID interno que asigna Zipgrade a cada estudiante
                         $exampleData = [
-                            ['SALOMÉ', 'ACEVEDO OCAMPO', '1234567890', 2026, 11, '1', 'NO', 'ACTIVE'],
-                            ['JUAN', 'PÉREZ GÓMEZ', '1098765432', 2026, 11, '2', 'SI', 'ACTIVE'],
+                            ['SALOMÉ', 'ACEVEDO OCAMPO', '1234567890', '1', 2026, 11, '1', 'NO', 'ACTIVE'],
+                            ['JUAN', 'PÉREZ GÓMEZ', '1098765432', '2', 2026, 11, '2', 'SI', 'ACTIVE'],
                         ];
 
                         // Add data rows
@@ -137,9 +140,15 @@ class StudentResource extends Resource
                         }
 
                         // Auto-size columns
-                        foreach (range('A', 'H') as $col) {
+                        foreach (range('A', 'I') as $col) {
                             $sheet->getColumnDimension($col)->setAutoSize(true);
                         }
+
+                        // Add helper comment to ZipgradeID column
+                        $sheet->getComment('D1')->getText()->createTextRun(
+                            'ZipgradeID: Es el número de identificación interno que Zipgrade asigna a cada estudiante. '.
+                            'Se encuentra en la columna "StudentID" del CSV exportado desde Zipgrade.'
+                        );
 
                         // Create temporary file
                         $tempFile = tempnam(sys_get_temp_dir(), 'plantilla_estudiantes_').'.xlsx';
@@ -206,10 +215,22 @@ class StudentResource extends Resource
                                             }
                                         }
 
+                                        // Detectar ZipgradeID (columna D)
+                                        $zipgradeId = '';
+                                        foreach ($headers as $col => $header) {
+                                            $headerUpper = strtoupper(trim($header));
+                                            if (strpos($headerUpper, 'ZIPGRADE') !== false || strpos($headerUpper, 'ZIPGRADEID') !== false) {
+                                                $zipgradeId = trim($row[$col] ?? '');
+                                                break;
+                                            }
+                                        }
+
                                         $preview[] = [
                                             'row' => $rowNum,
                                             'nombre' => $row['A'] ?? '',
                                             'apellido' => $row['B'] ?? '',
+                                            'documento' => $row['C'] ?? '',
+                                            'zipgrade_id' => $zipgradeId ?: '—',
                                             'piar_raw' => $piarValue,
                                             'piar_detected' => strtoupper(trim($piarValue)) === 'SI' ? '✅ SI (PIAR)' : '❌ NO (No PIAR)',
                                         ];
@@ -236,17 +257,19 @@ class StudentResource extends Resource
                                         Forms\Components\TextInput::make('row')->label('Fila')->disabled(),
                                         Forms\Components\TextInput::make('nombre')->label('Nombre')->disabled(),
                                         Forms\Components\TextInput::make('apellido')->label('Apellido')->disabled(),
-                                        Forms\Components\TextInput::make('piar_raw')->label('PIAR (valor original)')->disabled(),
+                                        Forms\Components\TextInput::make('documento')->label('Documento')->disabled(),
+                                        Forms\Components\TextInput::make('zipgrade_id')->label('ZipgradeID')->disabled(),
+                                        Forms\Components\TextInput::make('piar_raw')->label('PIAR (original)')->disabled(),
                                         Forms\Components\TextInput::make('piar_detected')->label('PIAR (detectado)')->disabled(),
                                     ])
-                                    ->columns(5)
+                                    ->columns(7)
                                     ->addable(false)
                                     ->deletable(false)
                                     ->reorderable(false),
 
                                 Forms\Components\Placeholder::make('preview_instructions')
                                     ->label('Instrucciones')
-                                    ->content('Verifica que la columna "PIAR (detectado)" muestre ✅ SI para estudiantes que deben ser PIAR. Si muestra ❌ NO para todos, hay un problema con la detección de la columna.')
+                                    ->content('Verifica que: (1) La columna "ZipgradeID" muestre el número asignado por Zipgrade (requerido para importar resultados), (2) "PIAR (detectado)" muestre ✅ SI para estudiantes PIAR. Si hay problemas con la detección, revisa los nombres de columnas en tu archivo.')
                                     ->columnSpanFull(),
                             ])
                             ->visible(fn ($get) => ! empty($get('preview_data'))),

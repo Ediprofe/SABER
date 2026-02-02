@@ -25,6 +25,8 @@ class StudentsExport implements FromCollection, WithHeadings
 
         return $query->get()->map(fn ($student) => [
             'code' => $student->code,
+            'document_id' => $student->document_id,
+            'zipgrade_id' => $student->zipgrade_id,
             'first_name' => $student->first_name,
             'last_name' => $student->last_name,
         ]);
@@ -34,6 +36,8 @@ class StudentsExport implements FromCollection, WithHeadings
     {
         return [
             'code',
+            'document_id',
+            'zipgrade_id',
             'first_name',
             'last_name',
         ];

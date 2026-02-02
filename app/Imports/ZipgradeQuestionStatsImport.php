@@ -45,6 +45,14 @@ class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, Wit
         DB::beginTransaction();
 
         try {
+            // Debug header columns
+            $firstRow = $rows->first();
+            if ($firstRow) {
+                Log::info('Zipgrade stats import - Available columns', [
+                    'columns' => array_keys($firstRow->toArray()),
+                ]);
+            }
+
             foreach ($rows as $index => $row) {
                 // Debug first row
                 if ($index === 0) {
@@ -53,11 +61,15 @@ class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, Wit
                     ]);
                 }
 
-                // Handle both uppercase and lowercase column names
-                // Excel generator creates snake_case: question_number, primary_answer, etc.
-                $questionNum = (int) ($row['question_number'] ?? 0);
-                $correctAnswer = trim($row['primary_answer'] ?? '');
-                $pctCorrect = $this->parsePercentage($row['correct'] ?? '0');
+                // Las columnas del Excel real de Zipgrade:
+                // Question_Number, Primary_Answer, % Correct
+                // Response 1, Response 1 %, Response 2, Response 2 %, etc.
+                //
+                // Laravel Excel convierte a snake_case:
+                // response_1 (letra), response_1_ (porcentaje con % incluido)
+
+                $questionNum = (int) ($row['question_number'] ?? $row['Question_Number'] ?? $row['questionnumber'] ?? 0);
+                $correctAnswer = trim($row['primary_answer'] ?? $row['Primary_Answer'] ?? '');
 
                 // Skip rows with missing question number
                 if ($questionNum <= 0) {
@@ -70,49 +82,25 @@ class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, Wit
                     continue;
                 }
 
-                // Response rankings - in generated Excel: response_1, response_2, etc. are percentages
-                // We need to reconstruct the letter + percentage pairs
-                // Order them by percentage descending
-                $responses = [];
+                // Los datos de Zipgrade YA vienen ordenados por % descendente
+                // Response 1 = 1° más elegida, Response 2 = 2° más elegida, etc.
+                // Múltiples variantes de nombres de columnas para compatibilidad
 
-                // Add primary answer with its percentage (correct answer percentage)
-                $responses[] = [
-                    'letter' => $correctAnswer,
-                    'pct' => $pctCorrect,
-                ];
+                // Response 1 (letra) - buscar en múltiples formatos
+                $response1 = $this->getColumnValue($row, ['response_1', 'Response 1', 'response1', 'respuesta_1']);
+                $response1Pct = $this->parsePercentage($this->getColumnValue($row, ['response_1_', 'Response 1 %', 'response_1_pct', 'response1_pct', 'respuesta_1_pct'], '0'));
 
-                // Get other response percentages
-                $resp2Pct = $this->parsePercentage($row['response_2'] ?? '0');
-                $resp3Pct = $this->parsePercentage($row['response_3'] ?? '0');
-                $resp4Pct = $this->parsePercentage($row['response_4'] ?? '0');
+                // Response 2 (letra)
+                $response2 = $this->getColumnValue($row, ['response_2', 'Response 2', 'response2', 'respuesta_2']);
+                $response2Pct = $this->parsePercentage($this->getColumnValue($row, ['response_2_', 'Response 2 %', 'response_2_pct', 'response2_pct', 'respuesta_2_pct'], '0'));
 
-                // Assign letters to other responses (skip the correct answer letter)
-                $allLetters = ['A', 'B', 'C', 'D'];
-                $otherLetters = array_diff($allLetters, [$correctAnswer]);
-                $otherLetters = array_values($otherLetters);
+                // Response 3 (letra)
+                $response3 = $this->getColumnValue($row, ['response_3', 'Response 3', 'response3', 'respuesta_3']);
+                $response3Pct = $this->parsePercentage($this->getColumnValue($row, ['response_3_', 'Response 3 %', 'response_3_pct', 'response3_pct', 'respuesta_3_pct'], '0'));
 
-                if (isset($otherLetters[0])) {
-                    $responses[] = ['letter' => $otherLetters[0], 'pct' => $resp2Pct ?? 0];
-                }
-                if (isset($otherLetters[1])) {
-                    $responses[] = ['letter' => $otherLetters[1], 'pct' => $resp3Pct ?? 0];
-                }
-                if (isset($otherLetters[2])) {
-                    $responses[] = ['letter' => $otherLetters[2], 'pct' => $resp4Pct ?? 0];
-                }
-
-                // Sort by percentage descending
-                usort($responses, fn ($a, $b) => $b['pct'] <=> $a['pct']);
-
-                // Assign to response 1-4
-                $response1 = $responses[0]['letter'] ?? 'A';
-                $response1Pct = $responses[0]['pct'] ?? 0;
-                $response2 = $responses[1]['letter'] ?? 'B';
-                $response2Pct = $responses[1]['pct'] ?? 0;
-                $response3 = $responses[2]['letter'] ?? 'C';
-                $response3Pct = $responses[2]['pct'] ?? 0;
-                $response4 = $responses[3]['letter'] ?? 'D';
-                $response4Pct = $responses[3]['pct'] ?? 0;
+                // Response 4 (letra)
+                $response4 = $this->getColumnValue($row, ['response_4', 'Response 4', 'response4', 'respuesta_4']);
+                $response4Pct = $this->parsePercentage($this->getColumnValue($row, ['response_4_', 'Response 4 %', 'response_4_pct', 'response4_pct', 'respuesta_4_pct'], '0'));
 
                 // Find the question
                 $question = ExamQuestion::where('exam_session_id', $this->examSessionId)
@@ -165,7 +153,22 @@ class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, Wit
     }
 
     /**
+     * Obtiene valor de columna buscando en múltiples nombres posibles.
+     */
+    private function getColumnValue($row, array $possibleNames, string $default = ''): string
+    {
+        foreach ($possibleNames as $name) {
+            if (isset($row[$name]) && ! empty($row[$name])) {
+                return trim($row[$name]);
+            }
+        }
+
+        return $default;
+    }
+
+    /**
      * Parse percentage value from various formats.
+     * Zipgrade usa formato: "78.46" o "78.46%"
      */
     private function parsePercentage($value): ?float
     {

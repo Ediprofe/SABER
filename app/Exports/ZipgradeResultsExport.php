@@ -826,16 +826,21 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
         // Obtener grupos donde hay estudiantes con respuestas en este examen
         $sessionIds = \App\Models\ExamSession::where('exam_id', $this->exam->id)->pluck('id');
 
+        // CORREGIDO: Solo grupos donde hay estudiantes CON respuestas reales
         $groupLabels = \App\Models\Enrollment::where('academic_year_id', $this->exam->academic_year_id)
             ->where('status', 'ACTIVE')
-            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
-                $query->whereIn('exam_session_id', $sessionIds);
+            ->whereHas('studentAnswers', function ($query) use ($sessionIds) {
+                // Solo estudiantes que realmente tienen respuestas
+                $query->whereHas('question', function ($q) use ($sessionIds) {
+                    $q->whereIn('exam_session_id', $sessionIds);
+                });
             })
             ->select('group')
             ->distinct()
             ->orderBy('group')
             ->get()
             ->pluck('group')
+            ->map(fn ($group) => (string) $group) // Asegurar que sean strings
             ->values();
 
         $dim1Data = $this->metricsService->getDimensionAnalysisByGroup($this->exam, $this->areaKey, 1);
@@ -1049,14 +1054,30 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
 
     public function columnFormats(): array
     {
-        return [
+        $formats = [
             'A' => NumberFormat::FORMAT_TEXT, // Competencia/Componente/Parte como texto
             'B' => NumberFormat::FORMAT_NUMBER_00, // Promedio/CON PIAR
             'C' => NumberFormat::FORMAT_NUMBER_00, // SIN PIAR
-            'D' => NumberFormat::FORMAT_TEXT, // Grupo 1
-            'E' => NumberFormat::FORMAT_TEXT, // Grupo 2
-            'F' => NumberFormat::FORMAT_TEXT, // Grupo 3
         ];
+
+        // Obtener grupos dinámicamente para aplicar formato de texto a todas las columnas de grupos
+        $sessionIds = \App\Models\ExamSession::where('exam_id', $this->exam->id)->pluck('id');
+        $groupCount = \App\Models\Enrollment::where('academic_year_id', $this->exam->academic_year_id)
+            ->where('status', 'ACTIVE')
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            })
+            ->distinct()
+            ->count('group');
+
+        // Aplicar formato de texto a todas las columnas de grupos (D en adelante)
+        $startColumn = 4; // Columna D
+        for ($i = 0; $i < $groupCount; $i++) {
+            $column = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($startColumn + $i);
+            $formats[$column] = NumberFormat::FORMAT_TEXT;
+        }
+
+        return $formats;
     }
 }
 
@@ -1214,14 +1235,23 @@ class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, Wit
     public function collection(): Collection
     {
         $sessionIds = \App\Models\ExamSession::where('exam_id', $this->exam->id)->pluck('id');
-        $baseQuery = function ($includePiar) use ($sessionIds) {
-            return Enrollment::query()
+        // CORREGIDO: CON PIAR = Todos los estudiantes (incluyendo PIAR)
+        // SIN PIAR = Todos los estudiantes EXCEPTO PIAR
+        $baseQuery = function ($excludePiar) use ($sessionIds) {
+            $query = Enrollment::query()
                 ->where('academic_year_id', $this->exam->academic_year_id)
                 ->where('status', 'ACTIVE')
-                ->where('is_piar', $includePiar)
                 ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
                     $query->whereIn('exam_session_id', $sessionIds);
                 });
+
+            // Si $excludePiar es true, excluir estudiantes PIAR (SIN PIAR)
+            // Si $excludePiar es false/null, incluir todos (CON PIAR)
+            if ($excludePiar) {
+                $query->where('is_piar', false);
+            }
+
+            return $query;
         };
 
         $areas = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'];
@@ -1241,30 +1271,34 @@ class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, Wit
 
         // Promedios por área
         foreach ($areas as $area) {
-            $withPiar = $this->calculateAreaStats($baseQuery(true), $area);
-            $withoutPiar = $this->calculateAreaStats($baseQuery(false), $area);
-            $diff = $withPiar['avg'] - $withoutPiar['avg'];
+            // CON PIAR: todos los estudiantes (excludePiar = false)
+            $conPiar = $this->calculateAreaStats($baseQuery(false), $area);
+            // SIN PIAR: excluir estudiantes PIAR (excludePiar = true)
+            $sinPiar = $this->calculateAreaStats($baseQuery(true), $area);
+            $diff = $conPiar['avg'] - $sinPiar['avg'];
 
             $rows->push([
                 'Promedio',
                 $areaLabels[$area],
-                round($withPiar['avg'], 2),
-                round($withoutPiar['avg'], 2),
+                round($conPiar['avg'], 2),
+                round($sinPiar['avg'], 2),
                 round($diff, 2),
             ]);
         }
 
         // Desviaciones estándar por área
         foreach ($areas as $area) {
-            $withPiar = $this->calculateAreaStats($baseQuery(true), $area);
-            $withoutPiar = $this->calculateAreaStats($baseQuery(false), $area);
-            $diff = $withPiar['stdDev'] - $withoutPiar['stdDev'];
+            // CON PIAR: todos los estudiantes (excludePiar = false)
+            $conPiar = $this->calculateAreaStats($baseQuery(false), $area);
+            // SIN PIAR: excluir estudiantes PIAR (excludePiar = true)
+            $sinPiar = $this->calculateAreaStats($baseQuery(true), $area);
+            $diff = $conPiar['stdDev'] - $sinPiar['stdDev'];
 
             $rows->push([
                 'Desv. Estándar',
                 $areaLabels[$area],
-                round($withPiar['stdDev'], 2),
-                round($withoutPiar['stdDev'], 2),
+                round($conPiar['stdDev'], 2),
+                round($sinPiar['stdDev'], 2),
                 round($diff, 2),
             ]);
         }
@@ -1273,15 +1307,17 @@ class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, Wit
         $rows->push(['', '', '', '', '']);
 
         // Promedio Global
-        $globalWithPiar = $this->calculateGlobalStats($baseQuery(true));
-        $globalWithoutPiar = $this->calculateGlobalStats($baseQuery(false));
-        $globalDiff = $globalWithPiar['avg'] - $globalWithoutPiar['avg'];
+        // CON PIAR: todos los estudiantes (excludePiar = false)
+        $globalConPiar = $this->calculateGlobalStats($baseQuery(false));
+        // SIN PIAR: excluir estudiantes PIAR (excludePiar = true)
+        $globalSinPiar = $this->calculateGlobalStats($baseQuery(true));
+        $globalDiff = $globalConPiar['avg'] - $globalSinPiar['avg'];
 
         $rows->push([
             'Promedio Global',
             '',
-            round($globalWithPiar['avg'], 2),
-            round($globalWithoutPiar['avg'], 2),
+            round($globalConPiar['avg'], 2),
+            round($globalSinPiar['avg'], 2),
             round($globalDiff, 2),
         ]);
 
@@ -1289,18 +1325,18 @@ class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, Wit
         $rows->push([
             'Desv. Estándar Global',
             '',
-            round($globalWithPiar['stdDev'], 2),
-            round($globalWithoutPiar['stdDev'], 2),
-            round($globalWithPiar['stdDev'] - $globalWithoutPiar['stdDev'], 2),
+            round($globalConPiar['stdDev'], 2),
+            round($globalSinPiar['stdDev'], 2),
+            round($globalConPiar['stdDev'] - $globalSinPiar['stdDev'], 2),
         ]);
 
         // Total estudiantes
         $rows->push([
             'Total Estudiantes',
             '',
-            $globalWithPiar['count'],
-            $globalWithoutPiar['count'],
-            $globalWithPiar['count'] + $globalWithoutPiar['count'],
+            $globalConPiar['count'],
+            $globalSinPiar['count'],
+            $globalConPiar['count'] + $globalSinPiar['count'],
         ]);
 
         return $rows;

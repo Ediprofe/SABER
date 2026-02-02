@@ -416,46 +416,127 @@ class ExamResource extends Resource
                     ->label('Importar Sesión 1')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('success')
-                    ->requiresConfirmation()
                     ->modalHeading('Importar Sesión 1')
-                    ->modalDescription('Esta acción importará los datos de la sesión 1 desde el archivo pre-generado.')
-                    ->modalSubmitActionLabel('Importar')
-                    ->action(function (Exam $record) {
-                        $filePath = storage_path('app/zipgrade_test/zipgrade_sesion1_prueba.csv');
+                    ->modalDescription('Seleccione el archivo CSV de Zipgrade con los tags de la sesión 1. Si hay tags nuevos, se mostrará una pantalla para clasificarlos antes de completar la importación.')
+                    ->modalSubmitActionLabel('Analizar y Continuar')
+                    ->form([
+                        Forms\Components\FileUpload::make('file')
+                            ->label('Archivo CSV de Zipgrade (Tags)')
+                            ->acceptedFileTypes([
+                                'text/csv',
+                                'text/plain',
+                                'application/vnd.ms-excel',
+                                'application/csv',
+                                'application/x-csv',
+                            ])
+                            ->disk('public')
+                            ->directory('zipgrade_imports')
+                            ->visibility('private')
+                            ->maxSize(10240) // 10MB
+                            ->required()
+                            ->helperText('Archivos CSV de hasta 10MB'),
+                    ])
+                    ->action(function (Exam $record, array $data) {
+                        $filePath = Storage::disk('public')->path($data['file']);
+
                         if (! file_exists($filePath)) {
                             Notification::make()
                                 ->title('Archivo no encontrado')
-                                ->body('El archivo zipgrade_sesion1_prueba.csv no existe. Genere los datos de prueba primero.')
+                                ->body('No se pudo acceder al archivo subido.')
                                 ->danger()
                                 ->send();
 
                             return;
                         }
 
-                        return static::processZipgradeImport($record, 1, $filePath);
+                        // Analizar el archivo para detectar tags nuevos
+                        try {
+                            $newTags = \App\Imports\ZipgradeTagsImport::analyzeFile($filePath);
+
+                            if (! empty($newTags)) {
+                                // Hay tags nuevos, redirigir a la página de clasificación
+                                // Codificar el path para pasarlo por la URL de forma segura
+                                $encodedPath = base64_encode($data['file']);
+
+                                return redirect()->to(
+                                    static::getUrl('classify-tags', [
+                                        'record' => $record,
+                                        'sessionNumber' => 1,
+                                        'filePath' => $encodedPath,
+                                    ])
+                                );
+                            }
+
+                            // No hay tags nuevos, proceder directamente con la importación
+                            return static::processZipgradeImport($record, 1, $filePath);
+
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Error al analizar archivo')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
                     }),
 
                 Tables\Actions\Action::make('import_session2')
                     ->label('Importar Sesión 2')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('warning')
-                    ->requiresConfirmation()
                     ->modalHeading('Importar Sesión 2')
-                    ->modalDescription('Esta acción importará los datos de la sesión 2 desde el archivo pre-generado.')
-                    ->modalSubmitActionLabel('Importar')
-                    ->action(function (Exam $record) {
-                        $filePath = storage_path('app/zipgrade_test/zipgrade_sesion2_prueba.csv');
+                    ->modalDescription('Seleccione el archivo CSV de Zipgrade con los tags de la sesión 2. Si hay tags nuevos, se mostrará una pantalla para clasificarlos antes de completar la importación.')
+                    ->modalSubmitActionLabel('Analizar y Continuar')
+                    ->form([
+                        Forms\Components\FileUpload::make('file')
+                            ->label('Archivo CSV de Zipgrade (Tags)')
+                            ->acceptedFileTypes([]) // Sin validación estricta de MIME type
+                            ->disk('public')
+                            ->directory('zipgrade_imports')
+                            ->visibility('private')
+                            ->maxSize(20480) // 20MB
+                            ->required()
+                            ->helperText('Archivos CSV de hasta 20MB. Si tiene problemas, asegúrese de que el archivo tenga extensión .csv'),
+                    ])
+                    ->action(function (Exam $record, array $data) {
+                        $filePath = Storage::disk('public')->path($data['file']);
+
                         if (! file_exists($filePath)) {
                             Notification::make()
                                 ->title('Archivo no encontrado')
-                                ->body('El archivo zipgrade_sesion2_prueba.csv no existe. Genere los datos de prueba primero.')
+                                ->body('No se pudo acceder al archivo subido.')
                                 ->danger()
                                 ->send();
 
                             return;
                         }
 
-                        return static::processZipgradeImport($record, 2, $filePath);
+                        // Analizar el archivo para detectar tags nuevos
+                        try {
+                            $newTags = \App\Imports\ZipgradeTagsImport::analyzeFile($filePath);
+
+                            if (! empty($newTags)) {
+                                // Hay tags nuevos, redirigir a la página de clasificación
+                                $encodedPath = base64_encode($data['file']);
+
+                                return redirect()->to(
+                                    static::getUrl('classify-tags', [
+                                        'record' => $record,
+                                        'sessionNumber' => 2,
+                                        'filePath' => $encodedPath,
+                                    ])
+                                );
+                            }
+
+                            // No hay tags nuevos, proceder directamente con la importación
+                            return static::processZipgradeImport($record, 2, $filePath);
+
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Error al analizar archivo')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
                     }),
 
                 Tables\Actions\Action::make('import_stats_session1')
@@ -606,6 +687,7 @@ class ExamResource extends Resource
             'create' => Pages\CreateExam::route('/create'),
             'edit' => Pages\EditExam::route('/{record}/edit'),
             'zipgrade-results' => Pages\ZipgradeResults::route('/{record}/zipgrade-results'),
+            'classify-tags' => Pages\ClassifyTags::route('/{record}/classify-tags/{sessionNumber}/{filePath}'),
         ];
     }
 

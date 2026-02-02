@@ -44,6 +44,9 @@ class DatabaseSeeder extends Seeder
         $this->seedStudentsAndEnrollments2026();
         $this->seedExam2025();
         $this->seedDetailConfiguration2025();
+
+        // Seed tag hierarchy for Zipgrade imports
+        $this->call(TagHierarchySeeder::class);
     }
 
     private function seedAcademicYears(): void

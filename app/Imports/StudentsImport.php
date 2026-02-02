@@ -39,6 +39,7 @@ class StudentsImport implements ToCollection, WithHeadingRow
                 $firstName = $this->getValueFromRow($row, ['nombre', 'name', 'first_name', 'FirstName']);
                 $lastName = $this->getValueFromRow($row, ['apellido', 'lastname', 'last_name', 'LastName']);
                 $documentId = $this->getValueFromRow($row, ['documento', 'document', 'document_id', 'Documento']);
+                $zipgradeId = $this->getValueFromRow($row, ['zipgradeid', 'zipgrade_id', 'ZipgradeID', 'zipgrade-id']);
                 $academicYear = $this->getValueFromRow($row, ['año', 'ano', 'year', 'academic_year', 'Año']);
                 $grade = $this->getValueFromRow($row, ['grado', 'grade', 'Grado']);
                 $group = $this->getValueFromRow($row, ['grupo', 'group', 'Grupo']);
@@ -115,10 +116,22 @@ class StudentsImport implements ToCollection, WithHeadingRow
                         $studentData['document_id'] = $documentId;
                     }
 
+                    if (! empty($zipgradeId)) {
+                        $studentData['zipgrade_id'] = $zipgradeId;
+                    }
+
                     $student = Student::create($studentData);
-                } elseif (! empty($documentId) && empty($student->document_id)) {
-                    $student->document_id = $documentId;
-                    $student->save();
+                } else {
+                    // Update existing student with new data if needed
+                    if (! empty($documentId) && empty($student->document_id)) {
+                        $student->document_id = $documentId;
+                    }
+                    if (! empty($zipgradeId) && empty($student->zipgrade_id)) {
+                        $student->zipgrade_id = $zipgradeId;
+                    }
+                    if ($student->isDirty()) {
+                        $student->save();
+                    }
                 }
 
                 // Check if enrollment already exists
@@ -165,6 +178,7 @@ class StudentsImport implements ToCollection, WithHeadingRow
 
     /**
      * Detecta las columnas del Excel basándose en la primera fila
+     * Formato esperado: Nombre | Apellido | Documento | ZipgradeID | Año | Grado | Grupo | PIAR (SI/NO) | Estado
      */
     private function detectColumns($firstRow): void
     {
@@ -172,11 +186,17 @@ class StudentsImport implements ToCollection, WithHeadingRow
             $header = strtoupper(trim($value));
 
             // Mapear por nombre de columna común
+            // ORDEN IMPORTANTE: detectar primero los casos más específicos
             if (strpos($header, 'NOMBRE') !== false && strpos($header, 'APELLIDO') === false) {
                 $this->columnMap['nombre'] = $key;
             } elseif (strpos($header, 'APELLIDO') !== false) {
                 $this->columnMap['apellido'] = $key;
-            } elseif (strpos($header, 'DOCUMENTO') !== false || strpos($header, 'ID') !== false) {
+            } elseif (strpos($header, 'ZIPGRADE') !== false || strpos($header, 'ZIPGRADEID') !== false) {
+                // Detectar ZipgradeID ANTES que Documento para evitar conflictos
+                $this->columnMap['zipgradeid'] = $key;
+                Log::info("Columna ZipgradeID detectada: key='{$key}', header='{$value}'");
+            } elseif (strpos($header, 'DOCUMENTO') !== false) {
+                // Solo Documento, no cualquier campo que contenga "ID"
                 $this->columnMap['documento'] = $key;
             } elseif (strpos($header, 'AÑO') !== false || strpos($header, 'ANO') !== false || strpos($header, 'YEAR') !== false) {
                 $this->columnMap['año'] = $key;
@@ -191,6 +211,8 @@ class StudentsImport implements ToCollection, WithHeadingRow
                 $this->columnMap['estado'] = $key;
             }
         }
+
+        Log::info('Columnas detectadas: '.json_encode($this->columnMap));
     }
 
     /**

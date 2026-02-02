@@ -42,9 +42,11 @@ class TagHierarchyResource extends Resource
                         'competencia' => 'Competencia',
                         'componente' => 'Componente',
                         'tipo_texto' => 'Tipo de Texto',
+                        'nivel_lectura' => 'Nivel de Lectura (Lectura Crítica)',
                         'parte' => 'Parte',
                     ])
-                    ->native(false),
+                    ->native(false)
+                    ->helperText('Nivel de Lectura es específico para el área de Lectura Crítica (Literal, Inferencial, Crítico)'),
                 Forms\Components\Select::make('parent_area')
                     ->label('Área Padre')
                     ->options(function () {

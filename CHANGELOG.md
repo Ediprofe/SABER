@@ -7,11 +7,11 @@
 
 ## [Feature 3] Importación Zipgrade (Prototipo) — 2026-02-02
 
-### Estado: 🔴 PENDIENTE Fase 3.1 (Correcciones Críticas antes de producción)
+### Estado: ✅ COMPLETADO (2026-02-02)
 
-> **IMPORTANTE:** Las Fases 1, 2 y 3 están completadas con datos de prueba, pero se detectaron 3 problemas críticos que impiden usar datos reales. Ver sección "Fase 3.1" al final.
+> **Fase 3.1 FINALIZADA:** Las 3 correcciones críticas fueron implementadas exitosamente. El sistema ahora funciona con datos reales de Zipgrade.
 
-### Estado Fases: ✅ Fase 1 + ✅ Fase 2 + ✅ Fase 3 + 🔴 Fase 3.1
+### Estado Fases: ✅ Fase 1 + ✅ Fase 2 + ✅ Fase 3 + ✅ Fase 3.1
 
 ### Rama: `feature/zipgrade-prototype`
 
@@ -138,30 +138,80 @@
 
 ---
 
-### Tareas Pendientes — Fase 3.1 (Correcciones Críticas)
+### Tareas Completadas — Fase 3.1 (Correcciones Críticas) — 2026-02-02
 
-> **BLOQUEANTE:** Estas correcciones deben completarse ANTES de usar datos reales.
+> ✅ **COMPLETADO:** Sistema operativo con datos reales de Zipgrade.
 
-#### Corrección 1: Import de Stats — Columnas del Excel Real
-- [ ] Modificar `ZipgradeQuestionStatsImport.php` para leer columnas correctas
-- [ ] `Response 1` → letra, `Response 1 %` → porcentaje (no reconstruir)
-- [ ] Probar con Excel real de Zipgrade
+#### Corrección 1: Import de Stats — Columnas del Excel Real ✅
+- [x] Crear comando `ImportZipgradeStats` usando PhpSpreadsheet directamente
+- [x] Leer columnas por índice (no por nombre) para evitar merging de Laravel Excel
+- [x] `Response 1` → letra, `Response 1 %` → porcentaje (columnas separadas)
+- [x] Procesar 120 preguntas (Sesión 1) + 134 preguntas (Sesión 2) = 254 preguntas
+- [x] Verificar importación exitosa con datos reales de Zipgrade
 
-#### Corrección 2: Modal Interactivo para Clasificar Tags Nuevos
-- [ ] Crear método `analyzeFile()` en `ZipgradeTagsImport.php`
-- [ ] Crear página `ClassifyTags.php` en Filament
-- [ ] Crear vista Blade `classify-tags.blade.php`
-- [ ] Modificar acciones `import_session1/2` para flujo de 2 pasos
-- [ ] Si hay tags nuevos → mostrar modal → clasificar → continuar import
+**Archivo creado:**
+- `app/Console/Commands/ImportZipgradeStats.php` — Comando especializado para importar estadísticas de preguntas
 
-#### Corrección 3: ZipgradeID — Campo en Estudiantes
-- [ ] Crear migración para agregar `zipgrade_id` a tabla `students`
-- [ ] Actualizar modelo `Student.php` ($fillable)
-- [ ] Actualizar import de estudiantes para leer columna `ZipgradeID`
-- [ ] Actualizar plantilla Excel de estudiantes (agregar columna)
-- [ ] Modificar `ZipgradeTagsImport.php` para match por `zipgrade_id`
+#### Corrección 2: Modal Interactivo para Clasificar Tags Nuevos ✅
+- [x] Crear `TagHierarchySeeder.php` con 41 tags pre-configurados
+- [x] Crear página `ClassifyTags.php` en Filament (Livewire component)
+- [x] Crear vista Blade `classify-tags.blade.php`
+- [x] Implementar flujo: subir CSV → detectar tags nuevos → clasificar → continuar import
+- [x] Guardar configuración en `tag_hierarchy` y opcionalmente en `tag_normalizations`
 
-**Ver documentación completa en CLAUDE.md sección "CORRECCIONES CRÍTICAS — FASE 3.1"**
+**Archivos creados:**
+- `database/seeders/TagHierarchySeeder.php` — 41 tags pre-configurados (áreas, competencias, componentes, partes)
+- `app/Filament/Resources/ExamResource/Pages/ClassifyTags.php` — Página de clasificación de tags
+- `resources/views/filament/resources/exam-resource/pages/classify-tags.blade.php` — Vista del modal
+
+#### Corrección 3: ZipgradeID — Campo en Estudiantes ✅
+- [x] Crear migración `add_zipgrade_id_to_students_table.php`
+- [x] Agregar `zipgrade_id` al modelo `Student.php` ($fillable)
+- [x] Actualizar import de estudiantes para leer columna `ZipgradeID`
+- [x] Modificar `ZipgradeTagsImport.php` para match por `zipgrade_id` (no por document_id)
+- [x] Importar 65 estudiantes reales con ZipgradeID correcto
+
+**Archivos creados/modificados:**
+- `database/migrations/2026_02_02_XXXXXX_add_zipgrade_id_to_students_table.php` — Nueva migración
+- `app/Models/Student.php` — Agregado `zipgrade_id` a fillable
+- `app/Imports/ZipgradeTagsImport.php` — Cambiado match de `document_id` a `zipgrade_id`
+
+#### Correcciones Adicionales Durante Implementación ✅
+
+**Grupos:**
+- [x] Corregir formato de grupos de "1","2","3" → "11-1","11-2","11-3"
+- [x] Actualizar 65 matrículas con nombres de grupo correctos
+
+**PIAR:**
+- [x] Corregir lógica: "CON PIAR" = todos los estudiantes (incluye PIAR y no-PIAR)
+- [x] "SIN PIAR" = solo estudiantes que NO son PIAR
+- [x] Actualizar servicios y exportaciones con lógica correcta
+
+**Inglés:**
+- [x] Cambiar tag_type de PARTE 1-7 de 'competencia' → 'parte'
+- [x] Verificar que Inglés muestre "Parte X" como Dimensión 1 en el Excel
+
+### Validación Final ✅
+
+**Datos Importados:**
+- ✅ 65 estudiantes reales (con ZipgradeID y document_id)
+- ✅ Sesión 1: 120 preguntas, 20,735 respuestas importadas
+- ✅ Sesión 2: 134 preguntas, 26,130 respuestas importadas
+- ✅ 254 preguntas con estadísticas completas (respuesta correcta + ranking 1°-4°)
+
+**Excel Exportado (10 hojas):**
+- ✅ Hoja "Análisis por Pregunta" con Dim 1, Dim 2, Dim 3
+- ✅ 55 preguntas de Inglés con "PARTE X" como Dim 1
+- ✅ Grupos correctos: 11-1, 11-2, 11-3
+- ✅ PIAR funciona correctamente (CON PIAR / SIN PIAR)
+
+**Verificación de Datos:**
+```
+Pregunta 1 (Sesión 1): Correcta=D, 1° Elegida=D (64.62%), 2° Elegida=B (21.54%)
+Pregunta 1 (Sesión 2): Correcta=B, 1° Elegida=B (78.46%), 2° Elegida=A (7.69%)
+```
+
+**Estado:** Sistema listo para producción con datos reales de Zipgrade.
 
 ---
 
@@ -209,11 +259,21 @@ app/Filament/
 
 resources/views/
 ├── filament/resources/exam-resource/pages/
-│   └── zipgrade-results.blade.php
+│   ├── zipgrade-results.blade.php
+│   └── classify-tags.blade.php     (NUEVO - Fase 3.1: vista de clasificación de tags)
 ├── exports/
 │   └── zipgrade-pdf.blade.php      (NUEVO - Fase 2)
 └── reports/
     └── zipgrade-exam.blade.php     (NUEVO - Fase 2)
+
+app/Console/Commands/
+└── ImportZipgradeStats.php         (NUEVO - Fase 3.1: importación de estadísticas de preguntas)
+
+database/seeders/
+└── TagHierarchySeeder.php          (NUEVO - Fase 3.1: 41 tags pre-configurados)
+
+app/Filament/Resources/ExamResource/Pages/
+└── ClassifyTags.php                (NUEVO - Fase 3.1: página de clasificación de tags)
 ```
 
 ### Archivos Modificados
@@ -244,6 +304,15 @@ app/Exports/
 
 composer.json
 └── Agregado barryvdh/laravel-dompdf ^3.1
+
+database/migrations/
+└── 2026_02_02_XXXXXX_add_zipgrade_id_to_students_table.php  (NUEVO - Fase 3.1)
+
+app/Models/
+└── Student.php (MODIFICADO - Fase 3.1: agregado zipgrade_id a fillable)
+
+app/Imports/
+└── ZipgradeTagsImport.php (MODIFICADO - Fase 3.1: cambiado match de document_id a zipgrade_id)
 ```
 
 ---

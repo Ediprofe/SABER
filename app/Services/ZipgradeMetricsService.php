@@ -40,10 +40,12 @@ class ZipgradeMetricsService
         // Obtener todas las preguntas de todas las sesiones del examen que tienen este tag
         $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
 
+        // CORREGIDO: Usar DISTINCT para evitar duplicación
         $questionIds = DB::table('exam_questions')
             ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
             ->whereIn('exam_questions.exam_session_id', $sessionIds)
             ->where('question_tags.tag_hierarchy_id', $tag->id)
+            ->distinct()
             ->pluck('exam_questions.id');
 
         if ($questionIds->isEmpty()) {
@@ -80,7 +82,7 @@ class ZipgradeMetricsService
             return 0.0;
         }
 
-        // Obtener todas las preguntas de esta área
+        // Obtener todas las preguntas de esta área (CORREGIDO: usar DISTINCT en SQL)
         $questionIds = DB::table('exam_questions')
             ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
             ->whereIn('exam_questions.exam_session_id', $sessionIds)
@@ -88,8 +90,8 @@ class ZipgradeMetricsService
                 $query->where('question_tags.tag_hierarchy_id', $areaTag->id)
                     ->orWhere('question_tags.inferred_area', $area);
             })
-            ->pluck('exam_questions.id')
-            ->unique();
+            ->distinct()
+            ->pluck('exam_questions.id');
 
         if ($questionIds->isEmpty()) {
             return 0.0;
@@ -143,6 +145,7 @@ class ZipgradeMetricsService
 
     /**
      * Obtiene estadísticas por tag para todo el examen.
+     * CORREGIDO: Evita duplicación usando DISTINCT en preguntas.
      */
     public function getTagStatistics(
         Exam $exam,
@@ -157,12 +160,29 @@ class ZipgradeMetricsService
 
         $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
 
-        $query = StudentAnswer::query()
-            ->join('exam_questions', 'student_answers.exam_question_id', '=', 'exam_questions.id')
+        // PASO 1: Obtener preguntas ÚNICAS que tienen este tag (evita duplicación)
+        $questionIds = DB::table('exam_questions')
             ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
-            ->join('enrollments', 'student_answers.enrollment_id', '=', 'enrollments.id')
             ->whereIn('exam_questions.exam_session_id', $sessionIds)
-            ->where('question_tags.tag_hierarchy_id', $tag->id);
+            ->where('question_tags.tag_hierarchy_id', $tag->id)
+            ->distinct()
+            ->pluck('exam_questions.id');
+
+        if ($questionIds->isEmpty()) {
+            return [
+                'tag' => $tagName,
+                'average' => 0,
+                'std_dev' => 0,
+                'min' => 0,
+                'max' => 0,
+                'count' => 0,
+            ];
+        }
+
+        // PASO 2: Calcular estadísticas usando solo preguntas únicas
+        $query = StudentAnswer::query()
+            ->join('enrollments', 'student_answers.enrollment_id', '=', 'enrollments.id')
+            ->whereIn('student_answers.exam_question_id', $questionIds);
 
         // Aplicar filtros
         if (! empty($filters['group'])) {
@@ -177,7 +197,7 @@ class ZipgradeMetricsService
             $query->where('enrollments.is_piar', false);
         }
 
-        // Calcular estadísticas por estudiante
+        // Calcular estadísticas por estudiante (ahora sin duplicación)
         $studentScores = $query->select(
             'student_answers.enrollment_id',
             DB::raw('SUM(CASE WHEN student_answers.is_correct THEN 1 ELSE 0 END) as correct_count'),

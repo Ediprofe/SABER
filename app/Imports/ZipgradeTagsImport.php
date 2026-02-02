@@ -38,6 +38,167 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
         $this->tagMappings = $tagMappings;
     }
 
+    /**
+     * Analiza un archivo CSV de Zipgrade para detectar tags nuevos sin importar datos.
+     * Este método es el Paso 1 del flujo de 2 pasos para clasificación de tags.
+     * Usa lectura nativa de CSV para mejor rendimiento con archivos grandes.
+     *
+     * @return array Lista de tags nuevos que necesitan clasificación
+     */
+    public static function analyzeFile(string $filePath): array
+    {
+        $newTags = [];
+        $uniqueTags = [];
+
+        if (! file_exists($filePath)) {
+            throw new \Exception("Archivo no encontrado: {$filePath}");
+        }
+
+        // Usar lectura nativa de CSV para mejor rendimiento en memoria
+        $handle = fopen($filePath, 'r');
+        if (! $handle) {
+            throw new \Exception("No se pudo abrir el archivo: {$filePath}");
+        }
+
+        // Leer encabezados
+        $headers = fgetcsv($handle);
+        if (! $headers) {
+            fclose($handle);
+
+            return [];
+        }
+
+        // Normalizar encabezados (buscar columna Tag)
+        $tagColumnIndex = null;
+        foreach ($headers as $index => $header) {
+            if (strcasecmp(trim($header), 'Tag') === 0) {
+                $tagColumnIndex = $index;
+                break;
+            }
+        }
+
+        if ($tagColumnIndex === null) {
+            fclose($handle);
+            throw new \Exception("No se encontró la columna 'Tag' en el archivo CSV");
+        }
+
+        // Recolectar tags únicos línea por línea (bajo consumo de memoria)
+        $rowCount = 0;
+        while (($row = fgetcsv($handle)) !== false) {
+            $rowCount++;
+            if (! isset($row[$tagColumnIndex])) {
+                continue;
+            }
+
+            $tagName = trim($row[$tagColumnIndex]);
+
+            if (! empty($tagName) && ! isset($uniqueTags[$tagName])) {
+                $uniqueTags[$tagName] = $tagName;
+
+                // Verificar si el tag existe en tag_hierarchy
+                $exists = TagHierarchy::where('tag_name', $tagName)->exists();
+
+                if (! $exists) {
+                    // Verificar si existe en normalizaciones
+                    $normalization = \App\Models\TagNormalization::findByCsvName($tagName);
+
+                    if (! $normalization) {
+                        $newTags[] = [
+                            'csv_name' => $tagName,
+                            'suggested_type' => self::inferTagType($tagName),
+                            'suggested_area' => self::inferTagArea($tagName),
+                        ];
+                    }
+                }
+            }
+
+            // Cada 1000 filas, liberar memoria
+            if ($rowCount % 1000 === 0) {
+                gc_collect_cycles();
+            }
+        }
+
+        fclose($handle);
+
+        return $newTags;
+    }
+
+    /**
+     * Intenta inferir el tipo de tag basándose en patrones comunes.
+     */
+    private static function inferTagType(string $tagName): ?string
+    {
+        // Patrones comunes para áreas
+        $areaPatterns = ['Ciencias', 'Matemáticas', 'Sociales', 'Lectura', 'Inglés'];
+        foreach ($areaPatterns as $area) {
+            if (stripos($tagName, $area) !== false) {
+                return 'area';
+            }
+        }
+
+        // Patrones específicos para Nivel de Lectura (Lectura Crítica)
+        $nivelLecturaPatterns = ['literal', 'inferencial', 'crítico', 'evaluativo', 'inferencia', 'crítica'];
+        foreach ($nivelLecturaPatterns as $pattern) {
+            if (stripos($tagName, $pattern) !== false) {
+                return 'nivel_lectura';
+            }
+        }
+
+        // Patrones comunes para competencias (términos de acción)
+        $competenciaPatterns = ['uso', 'interpretación', 'formulación', 'indagación', 'comprensivo', 'inferir', 'identificar', 'argumentación'];
+        foreach ($competenciaPatterns as $pattern) {
+            if (stripos($tagName, $pattern) !== false) {
+                return 'competencia';
+            }
+        }
+
+        // Patrones comunes para componentes (temas específicos)
+        $componentePatterns = ['químico', 'físico', 'biológico', 'vivo', 'cts', 'numérico', 'geométrico', 'aleatorio', 'aleatorio', 'historia', 'geografía', 'político'];
+        foreach ($componentePatterns as $pattern) {
+            if (stripos($tagName, $pattern) !== false) {
+                return 'componente';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Intenta inferir el área padre basándose en patrones comunes.
+     */
+    private static function inferTagArea(string $tagName): ?string
+    {
+        if (stripos($tagName, 'químico') !== false || stripos($tagName, 'físico') !== false ||
+            stripos($tagName, 'biológico') !== false || stripos($tagName, 'vivo') !== false) {
+            return 'Ciencias';
+        }
+
+        if (stripos($tagName, 'numérico') !== false || stripos($tagName, 'geométrico') !== false ||
+            stripos($tagName, 'aleatorio') !== false) {
+            return 'Matemáticas';
+        }
+
+        if (stripos($tagName, 'historia') !== false || stripos($tagName, 'geografía') !== false ||
+            stripos($tagName, 'político') !== false || stripos($tagName, 'ético') !== false) {
+            return 'Sociales';
+        }
+
+        if (stripos($tagName, 'continuo') !== false || stripos($tagName, 'discontinuo') !== false ||
+            stripos($tagName, 'literario') !== false) {
+            return 'Lectura';
+        }
+
+        // Nivel de Lectura siempre pertenece al área de Lectura
+        $nivelLecturaPatterns = ['literal', 'inferencial', 'crítico', 'evaluativo', 'inferencia', 'crítica'];
+        foreach ($nivelLecturaPatterns as $pattern) {
+            if (stripos($tagName, $pattern) !== false) {
+                return 'Lectura';
+            }
+        }
+
+        return null;
+    }
+
     public function chunkSize(): int
     {
         return 1000; // Process 1000 rows at a time to avoid memory issues
@@ -104,9 +265,10 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
                 $processedRows++;
 
                 // Store unique student
+                // IMPORTANTE: $studentId es el zipgrade_id (ID interno de Zipgrade), NO el documento de identidad
                 if (! isset($uniqueStudents[$studentId])) {
                     $uniqueStudents[$studentId] = [
-                        'document_id' => $studentId,
+                        'zipgrade_id' => $studentId,
                         'first_name' => $studentFirstName,
                         'last_name' => $studentLastName,
                     ];
@@ -127,6 +289,7 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
                 }
 
                 // Store answer info (will be processed later)
+                // IMPORTANTE: $studentId es el zipgrade_id
                 $answers[] = [
                     'student_id' => $studentId,
                     'question_num' => $questionNum,
@@ -269,26 +432,27 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
     }
 
     /**
-     * Busca o crea estudiantes por document_id.
+     * Busca o crea estudiantes por zipgrade_id.
+     * El StudentID en CSV de Zipgrade es el ID interno de Zipgrade, no el documento de identidad.
      */
     private function findOrCreateStudents(array $uniqueStudents): array
     {
         $studentIds = [];
         $this->processedStudents = [];
 
-        foreach ($uniqueStudents as $docId => $data) {
-            // First try to find by document_id
-            $student = Student::where('document_id', $docId)->first();
+        foreach ($uniqueStudents as $zipgradeId => $data) {
+            // First try to find by zipgrade_id (campo correcto del CSV de Zipgrade)
+            $student = Student::where('zipgrade_id', $zipgradeId)->first();
 
             if (! $student && ! empty($data['first_name']) && ! empty($data['last_name'])) {
-                // Try to find by name
+                // Try to find by name as fallback
                 $student = Student::where('first_name', $data['first_name'])
                     ->where('last_name', $data['last_name'])
                     ->first();
 
-                // If found by name, update document_id
+                // If found by name, update zipgrade_id
                 if ($student) {
-                    $student->document_id = $docId;
+                    $student->zipgrade_id = $zipgradeId;
                     $student->save();
                 }
             }
@@ -300,14 +464,14 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
 
                 $student = Student::create([
                     'code' => $tempCode,
-                    'document_id' => $docId,
+                    'zipgrade_id' => $zipgradeId,
                     'first_name' => $data['first_name'] ?: 'Estudiante',
-                    'last_name' => $data['last_name'] ?: $docId,
+                    'last_name' => $data['last_name'] ?: $zipgradeId,
                 ]);
             }
 
-            $studentIds[$docId] = $student->id;
-            $this->processedStudents[$docId] = $student->id;
+            $studentIds[$zipgradeId] = $student->id;
+            $this->processedStudents[$zipgradeId] = $student->id;
         }
 
         return $studentIds;
@@ -376,8 +540,14 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
                 $tag = TagHierarchy::find($tagId);
                 $inferredArea = null;
 
-                if ($tag && ! $tag->isArea()) {
-                    $inferredArea = $tag->parent_area;
+                if ($tag) {
+                    if ($tag->isArea()) {
+                        // Si es un tag de área (ej: "Ciencias Naturales", "Matemáticas"), usar el nombre del tag como área
+                        $inferredArea = $tag->tag_name;
+                    } else {
+                        // Si es un tag hijo (competencia, componente, etc.), usar el área padre
+                        $inferredArea = $tag->parent_area;
+                    }
                 }
 
                 QuestionTag::create([
