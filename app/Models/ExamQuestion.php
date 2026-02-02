@@ -11,7 +11,19 @@ class ExamQuestion extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['exam_session_id', 'question_number'];
+    protected $fillable = [
+        'exam_session_id',
+        'question_number',
+        'correct_answer',
+        'response_1',
+        'response_1_pct',
+        'response_2',
+        'response_2_pct',
+        'response_3',
+        'response_3_pct',
+        'response_4',
+        'response_4_pct',
+    ];
 
     public function session(): BelongsTo
     {

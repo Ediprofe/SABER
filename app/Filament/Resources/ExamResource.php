@@ -17,6 +17,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
@@ -457,6 +458,94 @@ class ExamResource extends Resource
                         return static::processZipgradeImport($record, 2, $filePath);
                     }),
 
+                Tables\Actions\Action::make('import_stats_session1')
+                    ->label('Importar Stats Sesión 1')
+                    ->icon('heroicon-o-chart-bar')
+                    ->color('info')
+                    ->modalHeading('Importar Estadísticas Sesión 1')
+                    ->modalDescription('Seleccione el archivo Excel con las estadísticas de Zipgrade para la sesión 1.')
+                    ->modalSubmitActionLabel('Importar Stats')
+                    ->visible(fn (Exam $record) => $record->hasSessions())
+                    ->form([
+                        Forms\Components\FileUpload::make('file')
+                            ->label('Archivo Excel de Estadísticas')
+                            ->acceptedFileTypes([
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'application/vnd.ms-excel',
+                            ])
+                            ->disk('public')
+                            ->directory('zipgrade_imports')
+                            ->visibility('private')
+                            ->required(),
+                    ])
+                    ->action(function (Exam $record, array $data) {
+                        try {
+                            $filePath = Storage::disk('public')->path($data['file']);
+
+                            if (! file_exists($filePath)) {
+                                Notification::make()
+                                    ->title('Archivo no encontrado')
+                                    ->body('No se pudo acceder al archivo subido.')
+                                    ->danger()
+                                    ->send();
+
+                                return;
+                            }
+
+                            return static::processZipgradeStatsImport($record, 1, $filePath);
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Error en la importación')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('import_stats_session2')
+                    ->label('Importar Stats Sesión 2')
+                    ->icon('heroicon-o-chart-bar')
+                    ->color('secondary')
+                    ->modalHeading('Importar Estadísticas Sesión 2')
+                    ->modalDescription('Seleccione el archivo Excel con las estadísticas de Zipgrade para la sesión 2.')
+                    ->modalSubmitActionLabel('Importar Stats')
+                    ->visible(fn (Exam $record) => $record->hasSessions())
+                    ->form([
+                        Forms\Components\FileUpload::make('file')
+                            ->label('Archivo Excel de Estadísticas')
+                            ->acceptedFileTypes([
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'application/vnd.ms-excel',
+                            ])
+                            ->disk('public')
+                            ->directory('zipgrade_imports')
+                            ->visibility('private')
+                            ->required(),
+                    ])
+                    ->action(function (Exam $record, array $data) {
+                        try {
+                            $filePath = Storage::disk('public')->path($data['file']);
+
+                            if (! file_exists($filePath)) {
+                                Notification::make()
+                                    ->title('Archivo no encontrado')
+                                    ->body('No se pudo acceder al archivo subido.')
+                                    ->danger()
+                                    ->send();
+
+                                return;
+                            }
+
+                            return static::processZipgradeStatsImport($record, 2, $filePath);
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Error en la importación')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+
                 Tables\Actions\Action::make('view_zipgrade_results')
                     ->label('Ver Resultados Zipgrade')
                     ->icon('heroicon-o-table-cells')
@@ -518,6 +607,51 @@ class ExamResource extends Resource
             'edit' => Pages\EditExam::route('/{record}/edit'),
             'zipgrade-results' => Pages\ZipgradeResults::route('/{record}/zipgrade-results'),
         ];
+    }
+
+    /**
+     * Procesa la importación de estadísticas de Zipgrade.
+     */
+    private static function processZipgradeStatsImport(Exam $exam, int $sessionNumber, string $filePath): void
+    {
+        ini_set('max_execution_time', 300);
+        set_time_limit(300);
+
+        $session = ExamSession::where('exam_id', $exam->id)
+            ->where('session_number', $sessionNumber)
+            ->first();
+
+        if (! $session) {
+            Notification::make()
+                ->title('Sesión no encontrada')
+                ->body("La sesión {$sessionNumber} no existe. Importe los tags primero.")
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        try {
+            if (! file_exists($filePath)) {
+                throw new \Exception('No se pudo encontrar el archivo: '.$filePath);
+            }
+
+            $importClass = new \App\Imports\ZipgradeQuestionStatsImport($session->id);
+            Excel::import($importClass, $filePath);
+
+            Notification::make()
+                ->title('Importación de estadísticas exitosa')
+                ->body("Se importaron estadísticas para {$importClass->getProcessedCount()} preguntas de la sesión {$sessionNumber}.")
+                ->success()
+                ->send();
+
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('Error en la importación de estadísticas')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        }
     }
 
     /**

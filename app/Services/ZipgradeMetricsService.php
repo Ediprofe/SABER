@@ -247,7 +247,7 @@ class ZipgradeMetricsService
         // Obtener grupos distintos
         $groups = DB::table('enrollments')
             ->where('academic_year_id', $exam->academic_year_id)
-            ->where('status', 'active')
+            ->where('status', 'ACTIVE')
             ->distinct()
             ->pluck('group');
 
@@ -393,7 +393,7 @@ class ZipgradeMetricsService
     {
         $query = Enrollment::query()
             ->where('academic_year_id', $exam->academic_year_id)
-            ->where('status', 'active');
+            ->where('status', 'ACTIVE');
 
         if (! empty($filters['group'])) {
             $query->where('group', $filters['group']);
@@ -408,5 +408,154 @@ class ZipgradeMetricsService
         }
 
         return $query->get();
+    }
+
+    /**
+     * Obtiene análisis por dimensión (competencia/componente/parte) agrupado por grupos.
+     *
+     * @param  int  $dimension  1 para dimensión 1 (competencias/parte), 2 para dimensión 2 (componentes/tipo_texto)
+     */
+    public function getDimensionAnalysisByGroup(Exam $exam, string $area, int $dimension): array
+    {
+        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+
+        // Determinar qué tipo de tags buscar según el área y dimensión
+        $tagTypes = match ([$area, $dimension]) {
+            ['ingles', 1] => ['parte'],
+            ['lectura', 2] => ['tipo_texto'],
+            default => $dimension === 1 ? ['competencia'] : ['componente'],
+        };
+
+        // Buscar área
+        $areaTag = $this->findAreaTag($area);
+
+        if (! $areaTag) {
+            return [];
+        }
+
+        // Obtener tags directamente desde las preguntas del examen
+        $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, $tagTypes);
+
+        // Si no hay tags en preguntas, buscar en tag_hierarchy
+        if ($tags->isEmpty()) {
+            $tags = TagHierarchy::whereIn('tag_type', $tagTypes)
+                ->where(function ($query) use ($areaTag) {
+                    $query->where('parent_area', $areaTag->tag_name)
+                        ->orWhereNull('parent_area');
+                })
+                ->get();
+        }
+
+        // Obtener grupos con su grado
+        $groupData = Enrollment::where('academic_year_id', $exam->academic_year_id)
+            ->where('status', 'ACTIVE')
+            ->select('grade', 'group')
+            ->distinct()
+            ->orderBy('grade')
+            ->orderBy('group')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'grade' => $item->grade,
+                    'group' => $item->group,
+                    'label' => $item->grade.'-'.$item->group,
+                ];
+            });
+
+        $result = [];
+
+        foreach ($tags as $tag) {
+            $tagName = $tag->tag_name;
+            $result[$tagName] = [];
+
+            // Obtener preguntas con este tag
+            $questionIds = DB::table('exam_questions')
+                ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
+                ->whereIn('exam_questions.exam_session_id', $sessionIds)
+                ->where('question_tags.tag_hierarchy_id', $tag->id)
+                ->pluck('exam_questions.id');
+
+            if ($questionIds->isEmpty()) {
+                continue;
+            }
+
+            // Calcular puntaje promedio por grupo
+            foreach ($groupData as $gData) {
+                $groupNum = $gData['group'];
+                $groupLabel = $gData['label'];
+
+                $groupEnrollmentIds = Enrollment::where('academic_year_id', $exam->academic_year_id)
+                    ->where('group', $groupNum)
+                    ->where('status', 'ACTIVE')
+                    ->pluck('id');
+
+                if ($groupEnrollmentIds->isEmpty()) {
+                    continue;
+                }
+
+                $totalQuestions = $questionIds->count();
+                $correctAnswers = StudentAnswer::whereIn('enrollment_id', $groupEnrollmentIds)
+                    ->whereIn('exam_question_id', $questionIds)
+                    ->where('is_correct', true)
+                    ->count();
+
+                $totalPossible = $groupEnrollmentIds->count() * $totalQuestions;
+
+                if ($totalPossible > 0) {
+                    $result[$tagName][$groupLabel] = round(($correctAnswers / $totalPossible) * 100, 2);
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Encuentra el tag de área según el nombre del área.
+     */
+    private function findAreaTag(string $area): ?TagHierarchy
+    {
+        $possibleNames = $this->areaMappings[$area] ?? [$area];
+
+        return TagHierarchy::whereIn('tag_name', $possibleNames)
+            ->where('tag_type', 'area')
+            ->first();
+    }
+
+    /**
+     * Busca tags desde las preguntas cuando no están configurados explícitamente.
+     */
+    private function findTagsFromQuestions(array $sessionIds, TagHierarchy $areaTag, array $tagTypes): Collection
+    {
+        // Para competencias: buscar por inferred_area en question_tags
+        // Para componentes/parte: buscar por parent_area en tag_hierarchy
+
+        $tagIds = collect();
+
+        // Buscar por inferred_area (competencias)
+        $idsFromInferred = DB::table('exam_questions')
+            ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
+            ->join('tag_hierarchy', 'question_tags.tag_hierarchy_id', '=', 'tag_hierarchy.id')
+            ->whereIn('exam_questions.exam_session_id', $sessionIds)
+            ->whereIn('tag_hierarchy.tag_type', $tagTypes)
+            ->where('question_tags.inferred_area', $areaTag->tag_name)
+            ->distinct()
+            ->pluck('tag_hierarchy.id');
+
+        $tagIds = $tagIds->merge($idsFromInferred);
+
+        // Buscar por parent_area (componentes, parte)
+        $idsFromParent = DB::table('exam_questions')
+            ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
+            ->join('tag_hierarchy', 'question_tags.tag_hierarchy_id', '=', 'tag_hierarchy.id')
+            ->whereIn('exam_questions.exam_session_id', $sessionIds)
+            ->whereIn('tag_hierarchy.tag_type', $tagTypes)
+            ->where('tag_hierarchy.parent_area', $areaTag->tag_name)
+            ->distinct()
+            ->pluck('tag_hierarchy.id');
+
+        $tagIds = $tagIds->merge($idsFromParent)->unique();
+
+        return TagHierarchy::whereIn('id', $tagIds)->get();
     }
 }
