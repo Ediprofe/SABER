@@ -674,6 +674,7 @@ class DetailAreaStatistics {
 | Feature 2: Análisis Detallado | ✅ Completado | 2026-01-30 | main |
 | Feature 3: Importación Zipgrade - Fase 1 (Importación) | ✅ Completado | 2026-02-01 | feature/zipgrade-prototype |
 | Feature 3: Importación Zipgrade - Fase 2 (Exportaciones) | ✅ Completado | 2026-02-01 | feature/zipgrade-prototype |
+| Feature 3: Importación Zipgrade - Fase 3 (Análisis por Ítem) | 🔄 Pendiente | — | feature/zipgrade-prototype |
 
 ---
 
@@ -1668,3 +1669,253 @@ class ZipgradeReportGenerator
 1. Primero el Excel (más simple, ya se usa Maatwebsite)
 2. Luego el PDF (requiere vista nueva)
 3. Finalmente el HTML (requiere análisis del ReportGenerator existente)
+
+---
+
+# 📊 FEATURE 3 - FASE 3: ANÁLISIS AVANZADO POR ÍTEM
+
+> **Estado:** PENDIENTE
+> **Rama:** `feature/zipgrade-prototype`
+> **Prioridad:** Alta
+> **Dependencia:** Fase 2 (Exportaciones) debe estar completa
+
+---
+
+## 🎯 Objetivo de la Fase
+
+Extender el sistema de exportación para incluir **análisis detallado por pregunta (ítem)**, permitiendo identificar respuestas correctas, ranking de opciones elegidas, y métricas por competencia/componente por grupo.
+
+---
+
+## 📥 Nuevo Excel de Importación: Estadísticas de Preguntas
+
+Zipgrade genera un Excel adicional con estadísticas por pregunta. Se importa **después** del Excel de Tags, uno por sesión.
+
+### Columnas del Excel de Estadísticas
+
+| Columna | Campo | Uso |
+|---------|-------|-----|
+| A | Quiz_Name | Nombre del quiz (validación) |
+| B | Class | Clase (no usado) |
+| C | Key | Clave (no usado) |
+| D | Question_Number | **Vincular con pregunta ya importada** |
+| E | Primary_Answer | **Respuesta correcta (A, B, C, D)** |
+| F | # Correct | Cantidad de correctas (no usado) |
+| G | % Correct | **Confirmación del % de acierto** |
+| H | Discriminant Factor | Factor de discriminación (no usado) |
+| I | Response 1 | **1° respuesta más elegida** |
+| J | Response 1 % | **% de esa respuesta** |
+| K | Response 2 | 2° respuesta más elegida |
+| L | Response 2 % | % de esa respuesta |
+| M | Response 3 | 3° respuesta más elegida |
+| N | Response 3 % | % de esa respuesta |
+| O | Response 4 | 4° respuesta más elegida |
+| P | Response 4 % | % de esa respuesta |
+
+---
+
+## 🧩 Cambios en Base de Datos
+
+### Migración: Agregar campos a `exam_questions`
+
+```php
+Schema::table('exam_questions', function (Blueprint $table) {
+    $table->string('correct_answer', 1)->nullable()->after('question_number');
+    $table->string('response_1', 1)->nullable();
+    $table->decimal('response_1_pct', 5, 2)->nullable();
+    $table->string('response_2', 1)->nullable();
+    $table->decimal('response_2_pct', 5, 2)->nullable();
+    $table->string('response_3', 1)->nullable();
+    $table->decimal('response_3_pct', 5, 2)->nullable();
+    $table->string('response_4', 1)->nullable();
+    $table->decimal('response_4_pct', 5, 2)->nullable();
+});
+```
+
+**Total:** 9 campos nuevos
+
+---
+
+## 📑 Estructura del Excel de Exportación (8 hojas)
+
+| Hoja | Nombre | Contenido |
+|------|--------|----------|
+| 1 | Resultados Completos | (ya existe - Fase 2) |
+| 2 | Resultados Anonimizados | (ya existe - Fase 2) |
+| 3 | Análisis por Pregunta | **NUEVA** - Todas las preguntas + ranking de respuestas |
+| 4 | Ciencias Naturales | **NUEVA** - Competencias × Grupo + Componentes × Grupo |
+| 5 | Matemáticas | **NUEVA** - Competencias × Grupo + Componentes × Grupo |
+| 6 | Ciencias Sociales | **NUEVA** - Competencias × Grupo + Componentes × Grupo |
+| 7 | Lectura Crítica | **NUEVA** - Competencias × Grupo + Tipos de Texto × Grupo |
+| 8 | Inglés | **NUEVA** - Partes × Grupo |
+
+---
+
+## 📋 Hoja 3: Análisis por Pregunta
+
+### Columnas
+
+| Columna | Descripción |
+|---------|-------------|
+| Sesión | 1 o 2 |
+| # | Número de pregunta |
+| Correcta | Respuesta correcta (A, B, C, D) |
+| Área | Naturales, Matemáticas, Sociales, Lectura, Inglés |
+| Dim 1 | Competencia (Nat/Mat/Soc/Lec) o Parte (Ing) |
+| Dim 2 | Componente (Nat/Mat/Soc), Tipo de Texto (Lec), o "—" (Ing) |
+| % Acierto | Porcentaje de estudiantes que acertaron |
+| Dificultad | Fácil (≥70%), Media (40-69%), Difícil (<40%) |
+| 1° Elegida | Respuesta más elegida |
+| 1° % | Porcentaje |
+| 2° Elegida | Segunda más elegida |
+| 2° % | Porcentaje |
+| 3° Elegida | Tercera más elegida |
+| 3° % | Porcentaje |
+| 4° Elegida | Cuarta más elegida |
+| 4° % | Porcentaje |
+
+### Ejemplo de Datos
+
+```
+Sesión | #  | Correcta | Área       | Dim 1           | Dim 2    | % Acierto | Dificultad | 1° | 1° %   | 2° | 2° %   | 3° | 3° %   | 4° | 4° %
+-------|----|----------|------------|-----------------|----------|-----------|-----------:|----:|------:|----:|------:|----:|------:|----:|-----:
+1      | 1  | D        | Naturales  | Uso comprensivo | Químico  | 60.98%    | Media      | D  | 60.98% | C  | 18.29% | B  | 10.98% | A  | 9.76%
+1      | 2  | B        | Naturales  | Indagación      | Físico   | 52.44%    | Media      | B  | 52.44% | A  | 21.95% | C  | 15.85% | D  | 9.76%
+1      | 7  | A        | Matemáticas| Interpretación  | Numérico | 28.05%    | Difícil    | D  | 45.12% | A  | 28.05% | C  | 20.73% | B  | 6.10%
+1      | 15 | C        | Lectura    | Inferir         | Continuo | 45.00%    | Media      | C  | 45.00% | B  | 30.00% | A  | 15.00% | D  | 10.00%
+1      | 22 | B        | Inglés     | Parte 3         | —        | 67.50%    | Fácil      | B  | 67.50% | C  | 18.00% | A  | 10.00% | D  | 4.50%
+2      | 1  | A        | Matemáticas| Formulación     | Aleatorio| 35.20%    | Difícil    | C  | 40.00% | A  | 35.20% | B  | 15.00% | D  | 9.80%
+```
+
+**Insight visual:** Si 1° Elegida ≠ Correcta, significa que un distractor "ganó". Se puede resaltar visualmente.
+
+---
+
+## 📊 Hojas 4-8: Análisis por Área
+
+Cada hoja de área contiene **dos tablas** (excepto Inglés que solo tiene una):
+
+### Tabla 1: Promedio por Dimensión 1 (Competencia/Parte)
+
+```
+Competencia/Parte     | 11-1   | 11-2   | 11-3   | Promedio
+----------------------|--------|--------|--------|----------
+[Nombre competencia]  | 62.5%  | 58.3%  | 65.1%  | 61.97%
+[Otra competencia]    | 45.2%  | 42.8%  | 48.5%  | 45.50%
+...
+```
+
+### Tabla 2: Promedio por Dimensión 2 (Componente/Tipo Texto)
+
+```
+Componente/Tipo Texto | 11-1   | 11-2   | 11-3   | Promedio
+----------------------|--------|--------|--------|----------
+[Nombre componente]   | 55.0%  | 52.3%  | 58.1%  | 55.13%
+[Otro componente]     | 48.2%  | 45.0%  | 50.5%  | 47.90%
+...
+```
+
+### Estructura por Área
+
+| Hoja | Área | Tabla 1 (Dim 1) | Tabla 2 (Dim 2) |
+|------|------|-----------------|------------------|
+| 4 | Ciencias Naturales | Competencias × Grupo | Componentes × Grupo |
+| 5 | Matemáticas | Competencias × Grupo | Componentes × Grupo |
+| 6 | Ciencias Sociales | Competencias × Grupo | Componentes × Grupo |
+| 7 | Lectura Crítica | Competencias × Grupo | Tipos de Texto × Grupo |
+| 8 | Inglés | Partes × Grupo | *(no aplica)* |
+
+---
+
+## 🔄 Flujo de Importación Actualizado
+
+```
+1. Crear Examen (con # de sesiones)
+           ↓
+2. Por cada sesión:
+   a) Importar Excel de Tags ← YA EXISTE (Fase 1)
+   b) Importar Excel de Estadísticas ← NUEVO (Fase 3)
+           ↓
+3. Ver Resultados / Exportar Excel (ahora con 8 hojas)
+```
+
+### Interfaz de Usuario
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Examen: Simulacro ICFES Marzo 2025                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Sesión 1                                                           │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ ✅ Tags importados (120 preguntas, 100 estudiantes)         │   │
+│  │ ⚪ Estadísticas pendientes          [Importar Stats]        │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  Sesión 2                                                           │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ ✅ Tags importados (140 preguntas, 100 estudiantes)         │   │
+│  │ ⚪ Estadísticas pendientes          [Importar Stats]        │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ⚠️ Para generar Hojas 3-8, importe las estadísticas primero      │
+│                                                                     │
+│  [Ver Resultados]  [Excel]  [PDF]  [Informe HTML]                  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📦 Entregables - Fase 3
+
+| # | Entregable | Ubicación | Prioridad |
+|---|------------|-----------|----------|
+| 1 | Migración: campos en `exam_questions` | `database/migrations/` | Alta |
+| 2 | Import `ZipgradeQuestionStatsImport` | `app/Imports/ZipgradeQuestionStatsImport.php` | Alta |
+| 3 | Botón "Importar Stats" en UI | Página de sesiones (`ExamResource`) | Alta |
+| 4 | Hoja 3: Análisis por Pregunta | `app/Exports/ZipgradeResultsExport.php` | Alta |
+| 5 | Hoja 4: Ciencias Naturales | `app/Exports/ZipgradeResultsExport.php` | Alta |
+| 6 | Hoja 5: Matemáticas | `app/Exports/ZipgradeResultsExport.php` | Alta |
+| 7 | Hoja 6: Ciencias Sociales | `app/Exports/ZipgradeResultsExport.php` | Alta |
+| 8 | Hoja 7: Lectura Crítica | `app/Exports/ZipgradeResultsExport.php` | Alta |
+| 9 | Hoja 8: Inglés | `app/Exports/ZipgradeResultsExport.php` | Alta |
+| 10 | Métricas por dimensión × grupo | `app/Services/ZipgradeMetricsService.php` | Alta |
+
+---
+
+## ✅ Definition of Done - Fase 3
+
+- [ ] Puedo importar Excel de estadísticas por sesión (botón "Importar Stats")
+- [ ] Los campos `correct_answer` y `response_1-4` con `%` se guardan en `exam_questions`
+- [ ] Hoja 3 muestra todas las preguntas de ambas sesiones con métricas y ranking de respuestas
+- [ ] Hojas 4-8 muestran promedios por dimensión × grupo para cada área
+- [ ] Inglés (Hoja 8) solo muestra una tabla (Partes)
+- [ ] Los grupos son columnas dinámicas del examen (11-1, 11-2, 11-3, etc.)
+- [ ] El Excel solo genera Hojas 3-8 si las estadísticas fueron importadas
+- [ ] El Excel se descarga correctamente con las 8 hojas
+
+---
+
+## 🔧 Notas de Implementación - Fase 3
+
+1. **Orden de importación:** Tags primero, luego Estadísticas. No permitir importar Stats sin Tags.
+
+2. **Grupos estáticos:** Para este prototipo, los grupos son fijos (11-1, 11-2, 11-3). Las columnas se generan dinámicamente según los grupos del examen.
+
+3. **Dimensiones por área:**
+   - Naturales/Matemáticas/Sociales: Competencia (Dim 1) + Componente (Dim 2)
+   - Lectura: Competencia (Dim 1) + Tipo de Texto (Dim 2)
+   - Inglés: Parte (Dim 1) solamente
+
+4. **Cálculo de promedios por dimensión:**
+   - Agrupar preguntas por tag de esa dimensión
+   - Para cada grupo: promedio de `response_1_pct` de las preguntas donde el estudiante pertenece a ese grupo
+   - **NO** es el promedio del `% Correct` de Zipgrade (ese es global), se debe calcular desde `student_answers`
+
+5. **Dificultad:**
+   - Fácil: ≥70% de acierto
+   - Media: 40-69% de acierto
+   - Difícil: <40% de acierto
+
+6. **Ubicación de las tablas en hojas de área:** Las dos tablas van una debajo de la otra, con un espacio de 2 filas entre ellas. Títulos en negrita.
