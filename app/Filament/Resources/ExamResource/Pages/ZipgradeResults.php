@@ -2,10 +2,14 @@
 
 namespace App\Filament\Resources\ExamResource\Pages;
 
+use App\Exports\ZipgradeResultsExport;
 use App\Filament\Resources\ExamResource;
 use App\Models\Enrollment;
 use App\Models\Exam;
 use App\Services\ZipgradeMetricsService;
+use App\Services\ZipgradePdfService;
+use App\Services\ZipgradeReportGenerator;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\Page;
 use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -14,6 +18,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ZipgradeResults extends Page implements HasTable
 {
@@ -133,10 +138,75 @@ class ZipgradeResults extends Page implements HasTable
     public function getHeaderActions(): array
     {
         return [
-            \Filament\Actions\Action::make('back')
+            Action::make('export_excel')
+                ->label('Excel')
+                ->icon('heroicon-o-document-chart-bar')
+                ->color('success')
+                ->action(function () {
+                    // Obtener valores de filtros desde las propiedades de Livewire
+                    $groupFilter = $this->tableFilters['group']['value'] ?? null;
+                    $piarFilter = $this->tableFilters['piar_only']['isActive'] ?? false;
+
+                    $export = new ZipgradeResultsExport(
+                        $this->record,
+                        $groupFilter,
+                        $piarFilter ? true : null
+                    );
+
+                    $filename = 'resultados_zipgrade_'.str_replace(' ', '_', strtolower($this->record->name)).'_'.now()->format('Y-m-d').'.xlsx';
+
+                    return Excel::download($export, $filename);
+                }),
+
+            Action::make('export_pdf')
+                ->label('PDF')
+                ->icon('heroicon-o-document-text')
+                ->color('warning')
+                ->action(function () {
+                    // Obtener valores de filtros desde las propiedades de Livewire
+                    $groupFilter = $this->tableFilters['group']['value'] ?? null;
+                    $piarFilter = $this->tableFilters['piar_only']['isActive'] ?? false;
+
+                    $pdfService = app(ZipgradePdfService::class);
+                    $filename = $pdfService->getFilename($this->record);
+
+                    return response()->streamDownload(function () use ($pdfService, $groupFilter, $piarFilter) {
+                        echo $pdfService->generate(
+                            $this->record,
+                            $groupFilter,
+                            $piarFilter ? true : null
+                        );
+                    }, $filename, [
+                        'Content-Type' => 'application/pdf',
+                    ]);
+                }),
+
+            Action::make('export_html')
+                ->label('Informe HTML')
+                ->icon('heroicon-o-code-bracket')
+                ->color('primary')
+                ->action(function () {
+                    // Obtener valores de filtros desde las propiedades de Livewire
+                    $groupFilter = $this->tableFilters['group']['value'] ?? null;
+
+                    $generator = app(ZipgradeReportGenerator::class);
+                    $filename = $generator->getReportFilename($this->record, $groupFilter);
+
+                    return response()->streamDownload(function () use ($generator, $groupFilter) {
+                        echo $generator->generateHtmlReport(
+                            $this->record,
+                            $groupFilter
+                        );
+                    }, $filename, [
+                        'Content-Type' => 'text/html; charset=utf-8',
+                    ]);
+                }),
+
+            Action::make('back')
                 ->label('Volver')
                 ->url(fn () => ExamResource::getUrl('index'))
-                ->icon('heroicon-o-arrow-left'),
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray'),
         ];
     }
 

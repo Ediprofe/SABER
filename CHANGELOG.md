@@ -7,13 +7,13 @@
 
 ## [Feature 3] Importación Zipgrade (Prototipo) — 2026-02-01
 
-### Estado: ✅ COMPLETADO
+### Estado: ✅ COMPLETADO (Fase 1 + Fase 2)
 
 ### Rama: `feature/zipgrade-prototype`
 
 ---
 
-### Tareas Completadas
+### Tareas Completadas - Fase 1: Importación
 
 - [x] Migración: agregar `document_id` a students (`2026_02_01_000001_add_document_id_to_students_table.php`)
 - [x] Migración: crear `tag_hierarchy` (`2026_02_01_000002_create_tag_hierarchy_table.php`)
@@ -51,11 +51,34 @@
 - [x] Regla: EarnedPoints > 0 = Correcta (1), = 0 = Incorrecta (0)
 - [x] Fórmula global: round(((L+M+S+N)*3 + I) / 13 * 5) implementada
 
+### Tareas Completadas - Fase 2: Exportaciones (2026-02-02)
+
+- [x] Export Excel `ZipgradeResultsExport` creado con 2 hojas
+  - Hoja 1: "Resultados Completos" (Documento, Nombre, Grupo, PIAR, Lectura, Matemáticas, Sociales, Naturales, Inglés, Global)
+  - Hoja 2: "Resultados Anonimizados" (Documento, Lectura, Matemáticas, Sociales, Naturales, Inglés, Global) - SIN Nombre, Grupo, PIAR
+- [x] Servicio PDF `ZipgradePdfService` creado con DomPDF
+  - PDF anonimizado (SIN Nombre, Grupo, PIAR)
+  - SIN resumen estadístico (solo tabla de datos)
+  - Orientación horizontal (landscape)
+  - Vista `resources/views/exports/zipgrade-pdf.blade.php`
+- [x] Reporte HTML `ZipgradeReportGenerator` creado
+  - Reutiliza estructura de Features 1 y 2
+  - Vista `resources/views/reports/zipgrade-exam.blade.php`
+  - Incluye todas las secciones: KPIs, listado, estadísticas, top performers, gráficos
+  - 100% offline (Alpine.js y Chart.js embebidos)
+  - Filtros aplicables (grupo, PIAR)
+- [x] Botones de exportación agregados en `ZipgradeResults`
+  - Botón "Excel" (color verde) - Exporta resultados_zipgrade_{exam}_{fecha}.xlsx
+  - Botón "PDF" (color amarillo) - Exporta resultados_zipgrade_{exam}_{fecha}.pdf
+  - Botón "Informe HTML" (color azul) - Exporta informe_{exam}_{fecha}.html
+- [x] Filtros de tabla aplicados a las exportaciones (grupo, PIAR)
+- [x] Instalación de `barryvdh/laravel-dompdf` ^3.1
+
 ---
 
 ### Tareas Pendientes / Bloqueadas
 
-Ninguna - todas las tareas del prototipo fueron completadas.
+Ninguna - todas las tareas fueron completadas.
 
 ---
 
@@ -80,10 +103,15 @@ app/Models/
 └── StudentAnswer.php
 
 app/Services/
-└── ZipgradeMetricsService.php
+├── ZipgradeMetricsService.php
+├── ZipgradePdfService.php          (NUEVO - Fase 2)
+└── ZipgradeReportGenerator.php     (NUEVO - Fase 2)
 
 app/Imports/
 └── ZipgradeTagsImport.php
+
+app/Exports/
+└── ZipgradeResultsExport.php       (NUEVO - Fase 2)
 
 app/Filament/
 ├── Resources/
@@ -96,8 +124,13 @@ app/Filament/
 └── Widgets/
     └── ZipgradeStatsWidget.php
 
-resources/views/filament/resources/exam-resource/pages/
-└── zipgrade-results.blade.php
+resources/views/
+├── filament/resources/exam-resource/pages/
+│   └── zipgrade-results.blade.php
+├── exports/
+│   └── zipgrade-pdf.blade.php      (NUEVO - Fase 2)
+└── reports/
+    └── zipgrade-exam.blade.php     (NUEVO - Fase 2)
 ```
 
 ### Archivos Modificados
@@ -109,6 +142,12 @@ app/Models/
 
 app/Filament/Resources/
 └── ExamResource.php (agregadas acciones de sesiones y resultados Zipgrade)
+
+app/Filament/Resources/ExamResource/Pages/
+└── ZipgradeResults.php (MODIFICADO - Fase 2: agregados 3 botones de exportación)
+
+composer.json
+└── Agregado barryvdh/laravel-dompdf ^3.1
 ```
 
 ---
