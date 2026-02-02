@@ -523,6 +523,134 @@ class ZipgradeMetricsService
     }
 
     /**
+     * Obtiene promedios CON PIAR y SIN PIAR para cada item de una dimensión,
+     * con desglose por grupo.
+     *
+     * @return array [itemName => ['con_piar' => [group => avg, 'promedio' => avg], 'sin_piar' => [...]]]
+     */
+    public function getDimensionPiarComparison(Exam $exam, string $area, int $dimension): array
+    {
+        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+
+        // Obtener grupos donde hay estudiantes con respuestas
+        $groups = Enrollment::where('academic_year_id', $exam->academic_year_id)
+            ->where('status', 'ACTIVE')
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            })
+            ->select('group')
+            ->distinct()
+            ->orderBy('group')
+            ->pluck('group');
+
+        // Determinar qué tipo de tags buscar
+        $tagTypes = match ([$area, $dimension]) {
+            ['ingles', 1] => ['parte'],
+            ['lectura', 2] => ['tipo_texto'],
+            ['lectura', 3] => ['nivel_lectura'],
+            default => match ($dimension) {
+                1 => ['competencia'],
+                2 => ['componente'],
+                default => ['componente'],
+            },
+        };
+
+        $areaTag = $this->findAreaTag($area);
+        if (! $areaTag) {
+            return [];
+        }
+
+        $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, $tagTypes);
+
+        if ($tags->isEmpty()) {
+            $tags = TagHierarchy::whereIn('tag_type', $tagTypes)
+                ->where(function ($query) use ($areaTag) {
+                    $query->where('parent_area', $areaTag->tag_name)
+                        ->orWhereNull('parent_area');
+                })
+                ->get();
+        }
+
+        $result = [];
+
+        foreach ($tags as $tag) {
+            $tagName = $tag->tag_name;
+
+            // Obtener preguntas con este tag
+            $questionIds = DB::table('exam_questions')
+                ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
+                ->whereIn('exam_questions.exam_session_id', $sessionIds)
+                ->where('question_tags.tag_hierarchy_id', $tag->id)
+                ->pluck('exam_questions.id');
+
+            if ($questionIds->isEmpty()) {
+                continue;
+            }
+
+            $totalQuestions = $questionIds->count();
+            $conPiarScores = [];
+            $sinPiarScores = [];
+
+            // Calcular por grupo
+            foreach ($groups as $group) {
+                // CON PIAR: todos los estudiantes del grupo
+                $allEnrollmentIds = Enrollment::where('academic_year_id', $exam->academic_year_id)
+                    ->where('group', $group)
+                    ->where('status', 'ACTIVE')
+                    ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                        $query->whereIn('exam_session_id', $sessionIds);
+                    })
+                    ->pluck('id');
+
+                $totalStudents = $allEnrollmentIds->count();
+                $correctAnswers = StudentAnswer::whereIn('enrollment_id', $allEnrollmentIds)
+                    ->whereIn('exam_question_id', $questionIds)
+                    ->where('is_correct', true)
+                    ->count();
+
+                $conPiarScores[$group] = ($totalStudents > 0 && $totalQuestions > 0)
+                    ? round(($correctAnswers / ($totalStudents * $totalQuestions)) * 100, 2)
+                    : 0;
+
+                // SIN PIAR: estudiantes del grupo sin PIAR
+                $nonPiarEnrollmentIds = Enrollment::where('academic_year_id', $exam->academic_year_id)
+                    ->where('group', $group)
+                    ->where('status', 'ACTIVE')
+                    ->where('is_piar', false)
+                    ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                        $query->whereIn('exam_session_id', $sessionIds);
+                    })
+                    ->pluck('id');
+
+                $nonPiarStudents = $nonPiarEnrollmentIds->count();
+                $correctAnswersNoPiar = StudentAnswer::whereIn('enrollment_id', $nonPiarEnrollmentIds)
+                    ->whereIn('exam_question_id', $questionIds)
+                    ->where('is_correct', true)
+                    ->count();
+
+                $sinPiarScores[$group] = ($nonPiarStudents > 0 && $totalQuestions > 0)
+                    ? round(($correctAnswersNoPiar / ($nonPiarStudents * $totalQuestions)) * 100, 2)
+                    : 0;
+            }
+
+            // Calcular promedios globales
+            $conPiarValues = array_values($conPiarScores);
+            $sinPiarValues = array_values($sinPiarScores);
+
+            $result[$tagName] = [
+                'con_piar' => array_merge($conPiarScores, [
+                    'promedio' => ! empty($conPiarValues) ? round(array_sum($conPiarValues) / count($conPiarValues), 2) : 0,
+                ]),
+                'sin_piar' => array_merge($sinPiarScores, [
+                    'promedio' => ! empty($sinPiarValues) ? round(array_sum($sinPiarValues) / count($sinPiarValues), 2) : 0,
+                ]),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
      * Encuentra el tag de área según el nombre del área.
      */
     private function findAreaTag(string $area): ?TagHierarchy
@@ -569,5 +697,77 @@ class ZipgradeMetricsService
         $tagIds = $tagIds->merge($idsFromParent)->unique();
 
         return TagHierarchy::whereIn('id', $tagIds)->get();
+    }
+
+    /**
+     * Obtiene los puntajes por dimensión (competencia/componente/parte/tipo_texto/nivel_lectura)
+     * para un estudiante específico.
+     *
+     * @return array [dimensionType => [tagName => score]]
+     */
+    public function getStudentDimensionScores(Enrollment $enrollment, Exam $exam, string $area): array
+    {
+        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+        $areaTag = $this->findAreaTag($area);
+
+        if (! $areaTag) {
+            return [];
+        }
+
+        // Determinar tipos de tags según el área
+        $tagTypesByArea = match ($area) {
+            'lectura' => ['competencia', 'tipo_texto', 'nivel_lectura'],
+            'ingles' => ['parte'],
+            default => ['competencia', 'componente'],
+        };
+
+        $result = [];
+
+        foreach ($tagTypesByArea as $tagType) {
+            $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, [$tagType]);
+
+            if ($tags->isEmpty()) {
+                $tags = TagHierarchy::where('tag_type', $tagType)
+                    ->where(function ($query) use ($areaTag) {
+                        $query->where('parent_area', $areaTag->tag_name)
+                            ->orWhereNull('parent_area');
+                    })
+                    ->get();
+            }
+
+            $typeScores = [];
+
+            foreach ($tags as $tag) {
+                // Obtener preguntas con este tag
+                $questionIds = DB::table('exam_questions')
+                    ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
+                    ->whereIn('exam_questions.exam_session_id', $sessionIds)
+                    ->where('question_tags.tag_hierarchy_id', $tag->id)
+                    ->pluck('exam_questions.id');
+
+                if ($questionIds->isEmpty()) {
+                    continue;
+                }
+
+                // Calcular puntaje para este estudiante
+                $totalQuestions = $questionIds->count();
+                $correctAnswers = StudentAnswer::where('enrollment_id', $enrollment->id)
+                    ->whereIn('exam_question_id', $questionIds)
+                    ->where('is_correct', true)
+                    ->count();
+
+                $score = ($totalQuestions > 0)
+                    ? round(($correctAnswers / $totalQuestions) * 100, 2)
+                    : 0;
+
+                $typeScores[$tag->tag_name] = $score;
+            }
+
+            if (! empty($typeScores)) {
+                $result[$tagType] = $typeScores;
+            }
+        }
+
+        return $result;
     }
 }

@@ -5,9 +5,9 @@
 
 ---
 
-## [Feature 3] Importación Zipgrade (Prototipo) — 2026-02-01
+## [Feature 3] Importación Zipgrade (Prototipo) — 2026-02-02
 
-### Estado: ✅ COMPLETADO (Fase 1 + Fase 2)
+### Estado: ✅ COMPLETADO (Fase 1 + Fase 2 + Fase 3)
 
 ### Rama: `feature/zipgrade-prototype`
 
@@ -73,6 +73,64 @@
   - Botón "Informe HTML" (color azul) - Exporta informe_{exam}_{fecha}.html
 - [x] Filtros de tabla aplicados a las exportaciones (grupo, PIAR)
 - [x] Instalación de `barryvdh/laravel-dompdf` ^3.1
+
+### Tareas Completadas - Fase 3: Exportaciones Avanzadas (2026-02-02)
+
+#### Nuevas Hojas de Excel
+
+- [x] Hoja "Formato Planilla" (posición #2)
+  - Escala 0-5 para profesores (Áreas: puntaje/100×5, Global: puntaje/500×5)
+  - Sin columnas Documento ni PIAR
+  - Columnas: Nombre, Grupo, Lectura, Matemáticas, Sociales, Naturales, Inglés, Global
+- [x] Hoja "Promedios y desviaciones"
+  - Promedios por área: CON PIAR vs SIN PIAR (5 áreas)
+  - Desviaciones estándar por área: CON PIAR vs SIN PIAR (5 áreas) 
+  - Promedio Global: CON PIAR vs SIN PIAR
+  - Desviación Estándar Global: CON PIAR vs SIN PIAR
+  - Total estudiantes en cada categoría
+- [x] Hoja "Análisis por Pregunta" (con Dim 1, Dim 2, Dim 3)
+- [x] Hojas por área con análisis detallado por dimensión
+  - Lectura Crítica: 3 dimensiones × 2 tablas (CON PIAR / SIN PIAR)
+  - Matemáticas: 2 dimensiones × 2 tablas (CON PIAR / SIN PIAR)
+  - Ciencias Sociales: 2 dimensiones × 2 tablas (CON PIAR / SIN PIAR)
+  - Ciencias Naturales: 2 dimensiones × 2 tablas (CON PIAR / SIN PIAR)
+  - Inglés: 1 dimensión × 2 tablas (CON PIAR / SIN PIAR)
+
+#### Hoja "Resultados Completos" Extendida
+
+- [x] Columnas congeladas A (Documento) y B (Nombre)
+- [x] Dimensiones agregadas después de Global (escala 0-100)
+  - Lectura Crítica: 9 columnas (competencias + tipos de texto + niveles de lectura)
+  - Matemáticas: 6 columnas (competencias + componentes)
+  - Ciencias Sociales: 6 columnas (competencias + componentes)
+  - Ciencias Naturales: 7 columnas (competencias + componentes)
+  - Inglés: N columnas según partes detectadas
+- [x] Etiquetas dinámicas (ej: Lec_Identificar y ubicar, Mat_Numérico-variacional)
+
+#### Nuevos Métodos en Servicios
+
+- [x] `ZipgradeMetricsService::getDimensionPiarComparison()` - Promedios CON/SIN PIAR por grupo
+- [x] `ZipgradeMetricsService::getStudentDimensionScores()` - Puntajes por dimensión por estudiante
+
+#### Correcciones de Bugs
+
+- [x] Grupos duplicados (11-11-1) corregidos → formato correcto (11-1)
+- [x] Estudiantes grado 10 filtrados correctamente (solo estudiantes con respuestas)
+- [x] Formato SIN PIAR igual a CON PIAR (fondo amarillo/dorado)
+- [x] Columnas dinámicas alineadas correctamente (array_merge en lugar de operador +)
+
+#### Total de Hojas Generadas: 10
+
+1. Resultados Completos
+2. Formato Planilla
+3. Resultados Anonimizados
+4. Análisis por Pregunta
+5. Promedios y desviaciones
+6. Lectura Crítica
+7. Matemáticas
+8. Ciencias Sociales
+9. Ciencias Naturales
+10. Inglés
 
 ---
 
@@ -146,6 +204,19 @@ app/Filament/Resources/
 app/Filament/Resources/ExamResource/Pages/
 └── ZipgradeResults.php (MODIFICADO - Fase 2: agregados 3 botones de exportación)
 
+app/Services/
+├── ZipgradeMetricsService.php (MODIFICADO - Fase 3: +2 métodos nuevos)
+│   ├── getDimensionPiarComparison() - Promedios CON/SIN PIAR por grupo
+│   └── getStudentDimensionScores() - Puntajes por dimensión por estudiante
+└── ZipgradeReportGenerator.php (MODIFICADO - Fase 3: filtros corregidos)
+    └── Filtros whereHas('studentAnswers') para excluir estudiantes sin respuestas
+
+app/Exports/
+└── ZipgradeResultsExport.php (MODIFICADO - Fase 3: +3 clases de hojas)
+    ├── PlanillaSheet (escala 0-5 para profesores)
+    ├── StatisticsSheet (promedios y desviaciones CON/SIN PIAR)
+    └── AreaAnalysisSheet (2 tablas por dimensión: CON PIAR / SIN PIAR)
+
 composer.json
 └── Agregado barryvdh/laravel-dompdf ^3.1
 ```
@@ -167,7 +238,12 @@ composer.json
 
 | Problema | Solución |
 |----------|----------|
-| *(pendiente)* | *(pendiente)* |
+| Grupos mostraban formato duplicado (11-11-1) | Cambiado operador `+` por `array_merge()` para colecciones Laravel |
+| Estudiantes grado 10 aparecían en reportes | Agregado filtro `whereHas('studentAnswers')` para solo incluir estudiantes con respuestas |
+| SIN PIAR aparecía sin formato especial | Agregada condición de estilo para "SIN PIAR" igual a "CON PIAR" |
+| Columnas dinámicas no alineaban correctamente | Corregido uso de `array_merge()` en lugar de operador `+` |
+| Relación `examQuestion` no existe | Corregido a `question` en todos los usos |
+| Relación `examSession` no existe en modelo | Corregido a `session` en todos los usos |
 
 ---
 
