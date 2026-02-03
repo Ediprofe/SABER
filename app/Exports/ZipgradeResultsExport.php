@@ -868,32 +868,46 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
         $groupArray = $groupLabels->toArray();
         $numGroups = count($groupArray);
 
-        // DIMENSIÓN 1: Dos tablas completas (CON PIAR y SIN PIAR)
+        // DIMENSIÓN 1: Tablas CON PIAR, SIN PIAR, y DIFERENCIA
         $rows->push(['DIMENSIÓN 1'] + array_fill(0, $numGroups + 1, ''));
         $header1 = array_merge([$this->getDim1Label(), 'Promedio'], $groupArray);
         $rows->push($header1);
 
-        // CON PIAR
+        // CON PIAR (todos)
         $rows->push(array_merge(['CON PIAR'], array_fill(0, $numGroups + 1, '')));
         foreach ($dim1PiarData as $itemName => $piarData) {
-            $row = [$itemName, $piarData['con_piar']['promedio']];
+            $row = [$itemName, round($piarData['con_piar']['promedio'], 1)];
             foreach ($groupArray as $groupLabel) {
-                $row[] = $piarData['con_piar'][$groupLabel] ?? 0;
+                $row[] = round($piarData['con_piar'][$groupLabel] ?? 0, 1);
             }
             $rows->push($row);
         }
 
-        // SIN PIAR
+        // SIN PIAR (solo no-PIAR) - FOCO
         $rows->push(array_merge(['SIN PIAR'], array_fill(0, $numGroups + 1, '')));
         foreach ($dim1PiarData as $itemName => $piarData) {
-            $row = [$itemName, $piarData['sin_piar']['promedio']];
+            $row = [$itemName, round($piarData['sin_piar']['promedio'], 1)];
             foreach ($groupArray as $groupLabel) {
-                $row[] = $piarData['sin_piar'][$groupLabel] ?? 0;
+                $row[] = round($piarData['sin_piar'][$groupLabel] ?? 0, 1);
+            }
+            $rows->push($row);
+        }
+        
+        // DIFERENCIA (SP - CP)
+        $rows->push(array_merge(['DIFERENCIA (SP-CP)'], array_fill(0, $numGroups + 1, '')));
+        foreach ($dim1PiarData as $itemName => $piarData) {
+            $spProm = $piarData['sin_piar']['promedio'];
+            $cpProm = $piarData['con_piar']['promedio'];
+            $row = [$itemName, round($spProm - $cpProm, 1)];
+            foreach ($groupArray as $groupLabel) {
+                $spVal = $piarData['sin_piar'][$groupLabel] ?? 0;
+                $cpVal = $piarData['con_piar'][$groupLabel] ?? 0;
+                $row[] = round($spVal - $cpVal, 1);
             }
             $rows->push($row);
         }
 
-        // DIMENSIÓN 2: Dos tablas completas (CON PIAR y SIN PIAR)
+        // DIMENSIÓN 2: Tablas CON PIAR, SIN PIAR, y DIFERENCIA
         if ($this->areaKey !== 'ingles' && ! empty($dim2PiarData)) {
             $rows->push(array_merge([''], array_fill(0, $numGroups + 1, '')));
             $rows->push(['DIMENSIÓN 2'] + array_fill(0, $numGroups + 1, ''));
@@ -903,25 +917,39 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
             // CON PIAR
             $rows->push(array_merge(['CON PIAR'], array_fill(0, $numGroups + 1, '')));
             foreach ($dim2PiarData as $itemName => $piarData) {
-                $row = [$itemName, $piarData['con_piar']['promedio']];
+                $row = [$itemName, round($piarData['con_piar']['promedio'], 1)];
                 foreach ($groupArray as $groupLabel) {
-                    $row[] = $piarData['con_piar'][$groupLabel] ?? 0;
+                    $row[] = round($piarData['con_piar'][$groupLabel] ?? 0, 1);
                 }
                 $rows->push($row);
             }
 
-            // SIN PIAR
+            // SIN PIAR - FOCO
             $rows->push(array_merge(['SIN PIAR'], array_fill(0, $numGroups + 1, '')));
             foreach ($dim2PiarData as $itemName => $piarData) {
-                $row = [$itemName, $piarData['sin_piar']['promedio']];
+                $row = [$itemName, round($piarData['sin_piar']['promedio'], 1)];
                 foreach ($groupArray as $groupLabel) {
-                    $row[] = $piarData['sin_piar'][$groupLabel] ?? 0;
+                    $row[] = round($piarData['sin_piar'][$groupLabel] ?? 0, 1);
+                }
+                $rows->push($row);
+            }
+            
+            // DIFERENCIA (SP - CP)
+            $rows->push(array_merge(['DIFERENCIA (SP-CP)'], array_fill(0, $numGroups + 1, '')));
+            foreach ($dim2PiarData as $itemName => $piarData) {
+                $spProm = $piarData['sin_piar']['promedio'];
+                $cpProm = $piarData['con_piar']['promedio'];
+                $row = [$itemName, round($spProm - $cpProm, 1)];
+                foreach ($groupArray as $groupLabel) {
+                    $spVal = $piarData['sin_piar'][$groupLabel] ?? 0;
+                    $cpVal = $piarData['con_piar'][$groupLabel] ?? 0;
+                    $row[] = round($spVal - $cpVal, 1);
                 }
                 $rows->push($row);
             }
         }
 
-        // DIMENSIÓN 3: Dos tablas completas (CON PIAR y SIN PIAR) - Solo Lectura
+        // DIMENSIÓN 3: Tablas CON PIAR, SIN PIAR, y DIFERENCIA - Solo Lectura
         if ($this->areaKey === 'lectura' && ! empty($dim3PiarData)) {
             $rows->push(array_merge([''], array_fill(0, $numGroups + 1, '')));
             $rows->push(['DIMENSIÓN 3'] + array_fill(0, $numGroups + 1, ''));
@@ -931,19 +959,33 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
             // CON PIAR
             $rows->push(array_merge(['CON PIAR'], array_fill(0, $numGroups + 1, '')));
             foreach ($dim3PiarData as $itemName => $piarData) {
-                $row = [$itemName, $piarData['con_piar']['promedio']];
+                $row = [$itemName, round($piarData['con_piar']['promedio'], 1)];
                 foreach ($groupArray as $groupLabel) {
-                    $row[] = $piarData['con_piar'][$groupLabel] ?? 0;
+                    $row[] = round($piarData['con_piar'][$groupLabel] ?? 0, 1);
                 }
                 $rows->push($row);
             }
 
-            // SIN PIAR
+            // SIN PIAR - FOCO
             $rows->push(array_merge(['SIN PIAR'], array_fill(0, $numGroups + 1, '')));
             foreach ($dim3PiarData as $itemName => $piarData) {
-                $row = [$itemName, $piarData['sin_piar']['promedio']];
+                $row = [$itemName, round($piarData['sin_piar']['promedio'], 1)];
                 foreach ($groupArray as $groupLabel) {
-                    $row[] = $piarData['sin_piar'][$groupLabel] ?? 0;
+                    $row[] = round($piarData['sin_piar'][$groupLabel] ?? 0, 1);
+                }
+                $rows->push($row);
+            }
+            
+            // DIFERENCIA (SP - CP)
+            $rows->push(array_merge(['DIFERENCIA (SP-CP)'], array_fill(0, $numGroups + 1, '')));
+            foreach ($dim3PiarData as $itemName => $piarData) {
+                $spProm = $piarData['sin_piar']['promedio'];
+                $cpProm = $piarData['con_piar']['promedio'];
+                $row = [$itemName, round($spProm - $cpProm, 1)];
+                foreach ($groupArray as $groupLabel) {
+                    $spVal = $piarData['sin_piar'][$groupLabel] ?? 0;
+                    $cpVal = $piarData['con_piar'][$groupLabel] ?? 0;
+                    $row[] = round($spVal - $cpVal, 1);
                 }
                 $rows->push($row);
             }
@@ -1016,12 +1058,26 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
         $headerStyle = [
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 10],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '3B82F6']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
         ];
 
-        // Estilo para encabezados de comparación PIAR
-        $piarHeaderStyle = [
-            'font' => ['bold' => true, 'color' => ['rgb' => '92400E'], 'size' => 10],
+        // Estilo para encabezado CON PIAR (normal)
+        $conPiarHeaderStyle = [
+            'font' => ['bold' => true, 'color' => ['rgb' => '6B7280'], 'size' => 10],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F9FAFB']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+        ];
+        
+        // Estilo para encabezado SIN PIAR (destacado - FOCO)
+        $sinPiarHeaderStyle = [
+            'font' => ['bold' => true, 'color' => ['rgb' => '1E40AF'], 'size' => 10],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DBEAFE']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+        ];
+        
+        // Estilo para encabezado DIFERENCIA
+        $diffHeaderStyle = [
+            'font' => ['bold' => true, 'italic' => true, 'color' => ['rgb' => '92400E'], 'size' => 10],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FEF3C7']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ];
@@ -1029,25 +1085,68 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
         // Estilo para filas de datos
         $dataStyle = [
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E2E8F0']]],
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
         ];
+        
+        // Variable para rastrear en qué sección estamos
+        $currentSection = null; // 'CON PIAR', 'SIN PIAR', 'DIFERENCIA'
 
-        // Aplicar estilos
+        // Aplicar estilos por fila
         for ($row = 1; $row <= $lastRow; $row++) {
             $value = $sheet->getCell("A{$row}")->getValue();
 
             if ($value === 'DIMENSIÓN 1' || $value === 'DIMENSIÓN 2' || $value === 'DIMENSIÓN 3') {
                 $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($sectionStyle);
+                $currentSection = null;
             } elseif ($row === $dim1Row || $row === $dim2Row || $row === $dim3Row) {
                 $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($headerStyle);
-            } elseif ($value === 'CON PIAR' || $value === 'SIN PIAR') {
-                // Encabezado de comparación PIAR (tanto CON como SIN)
-                $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($piarHeaderStyle);
+            } elseif ($value === 'CON PIAR') {
+                $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($conPiarHeaderStyle);
+                $currentSection = 'CON PIAR';
+            } elseif ($value === 'SIN PIAR') {
+                $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($sinPiarHeaderStyle);
+                $currentSection = 'SIN PIAR';
+            } elseif (str_contains($value ?? '', 'DIFERENCIA')) {
+                $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($diffHeaderStyle);
+                $currentSection = 'DIFERENCIA';
             } elseif (! empty($value) && $value !== $this->getDim1Label() && $value !== $this->getDim2Label() && $value !== $this->getDim3Label()) {
                 $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray($dataStyle);
-                // Negrita en primera columna
+                
+                // Aplicar estilo según la sección actual
+                if ($currentSection === 'SIN PIAR') {
+                    // Datos SIN PIAR en negrita (FOCO)
+                    $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray([
+                        'font' => ['bold' => true],
+                    ]);
+                } elseif ($currentSection === 'DIFERENCIA') {
+                    // Datos DIFERENCIA en cursiva gris
+                    $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->applyFromArray([
+                        'font' => ['italic' => true, 'color' => ['rgb' => '6B7280']],
+                    ]);
+                }
+                
+                // Negrita en primera columna (nombre)
                 $sheet->getStyle("A{$row}")->applyFromArray(['font' => ['bold' => true]]);
             }
         }
+        
+        // Ajustes globales de columnas
+        $sheet->getColumnDimension('A')->setWidth(40); // Primera columna ancha
+        
+        // Columnas de datos (B en adelante) centradas y ancho uniforme
+        $sheet->getStyle("B1:{$lastColumn}{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        
+        // Calcular número de columnas de grupos
+        $colIndex = 2; // Columna B
+        while ($colIndex <= \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($lastColumn)) {
+            $colString = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex);
+            $sheet->getColumnDimension($colString)->setWidth(12); // Ancho uniforme
+            $colIndex++;
+        }
+        
+        // Congelar primera columna y filas superiores si es necesario
+        // Pero dado el formato variable, mejor congelar solo columna A
+        $sheet->freezePane('B1');
 
         return [];
     }
@@ -1056,11 +1155,11 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
     {
         $formats = [
             'A' => NumberFormat::FORMAT_TEXT, // Competencia/Componente/Parte como texto
-            'B' => NumberFormat::FORMAT_NUMBER_00, // Promedio/CON PIAR
-            'C' => NumberFormat::FORMAT_NUMBER_00, // SIN PIAR
+            'B' => NumberFormat::FORMAT_NUMBER_00, // Promedio
+            // Las demas columnas se calculan dinámicamente
         ];
 
-        // Obtener grupos dinámicamente para aplicar formato de texto a todas las columnas de grupos
+        // Obtener grupos dinámicamente para aplicar formato numérico a todas las columnas
         $sessionIds = \App\Models\ExamSession::where('exam_id', $this->exam->id)->pluck('id');
         $groupCount = \App\Models\Enrollment::where('academic_year_id', $this->exam->academic_year_id)
             ->where('status', 'ACTIVE')
@@ -1070,11 +1169,17 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
             ->distinct()
             ->count('group');
 
-        // Aplicar formato de texto a todas las columnas de grupos (D en adelante)
-        $startColumn = 4; // Columna D
-        for ($i = 0; $i < $groupCount; $i++) {
+        // Aplicar formato numérico a todas las columnas de grupos (C en adelante)
+        $startColumn = 3; // Columna C (primera de grupos, B es promedio general)
+        // Nota: B es promedio global, C, D, E... son grupos.
+        // Espera, revisemos la estructura: [Item, Promedio, G1, G2, G3...]
+        // Columna B = Promedio, Columnas C... = Grupos
+        
+        // Aplicar formato numérico a todas las columnas de datos
+        // Asumiendo hasta 20 grupos para cubrir de sobra
+        for ($i = 0; $i < 20; $i++) {
             $column = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($startColumn + $i);
-            $formats[$column] = NumberFormat::FORMAT_TEXT;
+            $formats[$column] = NumberFormat::FORMAT_NUMBER_00;
         }
 
         return $formats;
@@ -1221,8 +1326,9 @@ class PlanillaSheet implements FromCollection, ShouldAutoSize, WithColumnFormatt
 
 /**
  * Hoja Promedios y Desviaciones: Estadísticas CON PIAR y SIN PIAR
+ * Diseño horizontal: Áreas como columnas, métricas como filas
  */
-class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, WithTitle
+class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, WithTitle, WithColumnFormatting
 {
     private ZipgradeMetricsService $metricsService;
 
@@ -1235,9 +1341,9 @@ class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, Wit
     public function collection(): Collection
     {
         $sessionIds = \App\Models\ExamSession::where('exam_id', $this->exam->id)->pluck('id');
-        // CORREGIDO: CON PIAR = Todos los estudiantes (incluyendo PIAR)
-        // SIN PIAR = Todos los estudiantes EXCEPTO PIAR
-        $baseQuery = function ($excludePiar) use ($sessionIds) {
+        
+        // Función base para crear queries
+        $baseQuery = function ($excludePiar = false, $group = null) use ($sessionIds) {
             $query = Enrollment::query()
                 ->where('academic_year_id', $this->exam->academic_year_id)
                 ->where('status', 'ACTIVE')
@@ -1245,197 +1351,330 @@ class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, Wit
                     $query->whereIn('exam_session_id', $sessionIds);
                 });
 
-            // Si $excludePiar es true, excluir estudiantes PIAR (SIN PIAR)
-            // Si $excludePiar es false/null, incluir todos (CON PIAR)
             if ($excludePiar) {
                 $query->where('is_piar', false);
+            }
+            
+            if ($group) {
+                $query->where('group', $group);
             }
 
             return $query;
         };
 
         $areas = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'];
-        $areaLabels = [
-            'lectura' => 'Lectura Crítica',
-            'matematicas' => 'Matemáticas',
-            'sociales' => 'Ciencias Sociales',
-            'naturales' => 'Ciencias Naturales',
-            'ingles' => 'Inglés',
-        ];
+        $areaLabels = ['Lectura Crítica', 'Matemáticas', 'C. Sociales', 'C. Naturales', 'Inglés', 'Global'];
+        
+        // Obtener grupos disponibles
+        $groups = Enrollment::query()
+            ->where('academic_year_id', $this->exam->academic_year_id)
+            ->where('status', 'ACTIVE')
+            ->whereHas('studentAnswers.question', function ($query) use ($sessionIds) {
+                $query->whereIn('exam_session_id', $sessionIds);
+            })
+            ->distinct()
+            ->pluck('group')
+            ->sort()
+            ->values();
 
         $rows = collect();
 
-        // Encabezados
-        $rows->push(['', '', '', '', '']);
-        $rows->push(['MÉTRICA', 'ÁREA', 'CON PIAR', 'SIN PIAR', 'DIFERENCIA']);
-
-        // Promedios por área
-        foreach ($areas as $area) {
-            // CON PIAR: todos los estudiantes (excludePiar = false)
-            $conPiar = $this->calculateAreaStats($baseQuery(false), $area);
-            // SIN PIAR: excluir estudiantes PIAR (excludePiar = true)
-            $sinPiar = $this->calculateAreaStats($baseQuery(true), $area);
-            $diff = $conPiar['avg'] - $sinPiar['avg'];
-
-            $rows->push([
-                'Promedio',
-                $areaLabels[$area],
-                round($conPiar['avg'], 2),
-                round($sinPiar['avg'], 2),
-                round($diff, 2),
-            ]);
-        }
-
-        // Desviaciones estándar por área
-        foreach ($areas as $area) {
-            // CON PIAR: todos los estudiantes (excludePiar = false)
-            $conPiar = $this->calculateAreaStats($baseQuery(false), $area);
-            // SIN PIAR: excluir estudiantes PIAR (excludePiar = true)
-            $sinPiar = $this->calculateAreaStats($baseQuery(true), $area);
-            $diff = $conPiar['stdDev'] - $sinPiar['stdDev'];
-
-            $rows->push([
-                'Desv. Estándar',
-                $areaLabels[$area],
-                round($conPiar['stdDev'], 2),
-                round($sinPiar['stdDev'], 2),
-                round($diff, 2),
-            ]);
-        }
-
+        // ========================================
+        // ENCABEZADO
+        // ========================================
+        $rows->push(['', ...$areaLabels]);
+        
+        // ========================================
+        // SECCIÓN: PROMEDIOS GENERALES
+        // ========================================
+        $rows->push(['PROMEDIOS', '', '', '', '', '', '']);
+        
+        // Promedio CP (Con PIAR = TODOS)
+        $cpStats = $this->getAllAreasStats($baseQuery(false));
+        $rows->push([
+            'Promedio CP (todos)',
+            round($cpStats['lectura']['avg'], 0),
+            round($cpStats['matematicas']['avg'], 0),
+            round($cpStats['sociales']['avg'], 0),
+            round($cpStats['naturales']['avg'], 0),
+            round($cpStats['ingles']['avg'], 0),
+            round($cpStats['global']['avg'], 0),
+        ]);
+        
+        // Promedio SP (Sin PIAR = solo no-PIAR)
+        $spStats = $this->getAllAreasStats($baseQuery(true));
+        $rows->push([
+            'Promedio SP',
+            round($spStats['lectura']['avg'], 0),
+            round($spStats['matematicas']['avg'], 0),
+            round($spStats['sociales']['avg'], 0),
+            round($spStats['naturales']['avg'], 0),
+            round($spStats['ingles']['avg'], 0),
+            round($spStats['global']['avg'], 0),
+        ]);
+        
+        // Diferencia (SP - CP: positivo cuando SP es mayor)
+        $rows->push([
+            'Diferencia (SP - CP)',
+            round($spStats['lectura']['avg'] - $cpStats['lectura']['avg'], 1),
+            round($spStats['matematicas']['avg'] - $cpStats['matematicas']['avg'], 1),
+            round($spStats['sociales']['avg'] - $cpStats['sociales']['avg'], 1),
+            round($spStats['naturales']['avg'] - $cpStats['naturales']['avg'], 1),
+            round($spStats['ingles']['avg'] - $cpStats['ingles']['avg'], 1),
+            round($spStats['global']['avg'] - $cpStats['global']['avg'], 1),
+        ]);
+        
         // Fila vacía
-        $rows->push(['', '', '', '', '']);
-
-        // Promedio Global
-        // CON PIAR: todos los estudiantes (excludePiar = false)
-        $globalConPiar = $this->calculateGlobalStats($baseQuery(false));
-        // SIN PIAR: excluir estudiantes PIAR (excludePiar = true)
-        $globalSinPiar = $this->calculateGlobalStats($baseQuery(true));
-        $globalDiff = $globalConPiar['avg'] - $globalSinPiar['avg'];
-
+        $rows->push(['', '', '', '', '', '', '']);
+        
+        // ========================================
+        // SECCIÓN: PROMEDIOS POR GRUPO
+        // ========================================
+        $rows->push(['PROMEDIOS POR GRUPO', '', '', '', '', '', '']);
+        
+        foreach ($groups as $group) {
+            // CP del grupo
+            $groupCpStats = $this->getAllAreasStats($baseQuery(false, $group));
+            $rows->push([
+                "Promedio {$group} CP",
+                round($groupCpStats['lectura']['avg'], 0),
+                round($groupCpStats['matematicas']['avg'], 0),
+                round($groupCpStats['sociales']['avg'], 0),
+                round($groupCpStats['naturales']['avg'], 0),
+                round($groupCpStats['ingles']['avg'], 0),
+                round($groupCpStats['global']['avg'], 0),
+            ]);
+            
+            // SP del grupo
+            $groupSpStats = $this->getAllAreasStats($baseQuery(true, $group));
+            $rows->push([
+                "Promedio {$group} SP",
+                round($groupSpStats['lectura']['avg'], 0),
+                round($groupSpStats['matematicas']['avg'], 0),
+                round($groupSpStats['sociales']['avg'], 0),
+                round($groupSpStats['naturales']['avg'], 0),
+                round($groupSpStats['ingles']['avg'], 0),
+                round($groupSpStats['global']['avg'], 0),
+            ]);
+        }
+        
+        // Fila vacía
+        $rows->push(['', '', '', '', '', '', '']);
+        
+        // ========================================
+        // SECCIÓN: DESVIACIONES ESTÁNDAR
+        // ========================================
+        $rows->push(['DESVIACIONES ESTÁNDAR', '', '', '', '', '', '']);
+        
+        // Desv. Est. CP
         $rows->push([
-            'Promedio Global',
-            '',
-            round($globalConPiar['avg'], 2),
-            round($globalSinPiar['avg'], 2),
-            round($globalDiff, 2),
+            'Desv. Est. CP (todos)',
+            round($cpStats['lectura']['stdDev'], 2),
+            round($cpStats['matematicas']['stdDev'], 2),
+            round($cpStats['sociales']['stdDev'], 2),
+            round($cpStats['naturales']['stdDev'], 2),
+            round($cpStats['ingles']['stdDev'], 2),
+            round($cpStats['global']['stdDev'], 2),
         ]);
-
-        // Desviación Estándar Global
+        
+        // Desv. Est. SP
         $rows->push([
-            'Desv. Estándar Global',
-            '',
-            round($globalConPiar['stdDev'], 2),
-            round($globalSinPiar['stdDev'], 2),
-            round($globalConPiar['stdDev'] - $globalSinPiar['stdDev'], 2),
+            'Desv. Est. SP',
+            round($spStats['lectura']['stdDev'], 2),
+            round($spStats['matematicas']['stdDev'], 2),
+            round($spStats['sociales']['stdDev'], 2),
+            round($spStats['naturales']['stdDev'], 2),
+            round($spStats['ingles']['stdDev'], 2),
+            round($spStats['global']['stdDev'], 2),
         ]);
-
-        // Total estudiantes
+        
+        // Fila vacía
+        $rows->push(['', '', '', '', '', '', '']);
+        
+        // ========================================
+        // SECCIÓN: DESVIACIONES POR GRUPO
+        // ========================================
+        $rows->push(['DESVIACIONES POR GRUPO', '', '', '', '', '', '']);
+        
+        foreach ($groups as $group) {
+            $groupCpStats = $this->getAllAreasStats($baseQuery(false, $group));
+            $groupSpStats = $this->getAllAreasStats($baseQuery(true, $group));
+            
+            $rows->push([
+                "Desv. Est. {$group} CP",
+                round($groupCpStats['lectura']['stdDev'], 2),
+                round($groupCpStats['matematicas']['stdDev'], 2),
+                round($groupCpStats['sociales']['stdDev'], 2),
+                round($groupCpStats['naturales']['stdDev'], 2),
+                round($groupCpStats['ingles']['stdDev'], 2),
+                round($groupCpStats['global']['stdDev'], 2),
+            ]);
+            
+            $rows->push([
+                "Desv. Est. {$group} SP",
+                round($groupSpStats['lectura']['stdDev'], 2),
+                round($groupSpStats['matematicas']['stdDev'], 2),
+                round($groupSpStats['sociales']['stdDev'], 2),
+                round($groupSpStats['naturales']['stdDev'], 2),
+                round($groupSpStats['ingles']['stdDev'], 2),
+                round($groupSpStats['global']['stdDev'], 2),
+            ]);
+        }
+        
+        // Fila vacía
+        $rows->push(['', '', '', '', '', '', '']);
+        
+        // ========================================
+        // SECCIÓN: TOTALES
+        // ========================================
+        $rows->push(['TOTALES', '', '', '', '', '', '']);
         $rows->push([
-            'Total Estudiantes',
-            '',
-            $globalConPiar['count'],
-            $globalSinPiar['count'],
-            $globalConPiar['count'] + $globalSinPiar['count'],
+            'Total estudiantes CP',
+            $cpStats['lectura']['count'],
+            '', '', '', '', '',
+        ]);
+        $rows->push([
+            'Total estudiantes SP',
+            $spStats['lectura']['count'],
+            '', '', '', '', '',
+        ]);
+        $rows->push([
+            'Estudiantes con PIAR',
+            $cpStats['lectura']['count'] - $spStats['lectura']['count'],
+            '', '', '', '', '',
         ]);
 
         return $rows;
     }
-
-    private function calculateAreaStats($query, string $area): array
+    
+    /**
+     * Calcula estadísticas para todas las áreas de una vez
+     */
+    private function getAllAreasStats($query): array
     {
         $enrollments = $query->get();
-        $scores = [];
-
+        
+        $areas = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'];
+        $areaScores = array_fill_keys($areas, []);
+        $globalScores = [];
+        
         foreach ($enrollments as $enrollment) {
-            $scores[] = $this->metricsService->getStudentAreaScore($enrollment, $this->exam, $area);
+            foreach ($areas as $area) {
+                $areaScores[$area][] = $this->metricsService->getStudentAreaScore($enrollment, $this->exam, $area);
+            }
+            $globalScores[] = $this->metricsService->getStudentGlobalScore($enrollment, $this->exam);
         }
-
-        if (empty($scores)) {
+        
+        $result = [];
+        foreach ($areas as $area) {
+            $result[$area] = $this->calculateStats($areaScores[$area]);
+        }
+        $result['global'] = $this->calculateStats($globalScores);
+        
+        return $result;
+    }
+    
+    private function calculateStats(array $values): array
+    {
+        if (empty($values)) {
             return ['avg' => 0, 'stdDev' => 0, 'count' => 0];
         }
-
-        $avg = array_sum($scores) / count($scores);
-        $stdDev = $this->calculateStdDev($scores, $avg);
-
-        return [
-            'avg' => $avg,
-            'stdDev' => $stdDev,
-            'count' => count($scores),
-        ];
-    }
-
-    private function calculateGlobalStats($query): array
-    {
-        $enrollments = $query->get();
-        $scores = [];
-
-        foreach ($enrollments as $enrollment) {
-            $scores[] = $this->metricsService->getStudentGlobalScore($enrollment, $this->exam);
-        }
-
-        if (empty($scores)) {
-            return ['avg' => 0, 'stdDev' => 0, 'count' => 0];
-        }
-
-        $avg = array_sum($scores) / count($scores);
-        $stdDev = $this->calculateStdDev($scores, $avg);
-
-        return [
-            'avg' => $avg,
-            'stdDev' => $stdDev,
-            'count' => count($scores),
-        ];
-    }
-
-    private function calculateStdDev(array $values, float $mean): float
-    {
+        
         $count = count($values);
+        $avg = array_sum($values) / $count;
+        
         if ($count < 2) {
-            return 0;
+            return ['avg' => $avg, 'stdDev' => 0, 'count' => $count];
         }
-
+        
         $sum = 0;
         foreach ($values as $value) {
-            $sum += pow($value - $mean, 2);
+            $sum += pow($value - $avg, 2);
         }
-
-        return sqrt($sum / ($count - 1));
+        $stdDev = sqrt($sum / ($count - 1));
+        
+        return ['avg' => $avg, 'stdDev' => $stdDev, 'count' => $count];
     }
 
     public function title(): string
     {
         return 'Promedios y desviaciones';
     }
+    
+    public function columnFormats(): array
+    {
+        return [
+            'B' => NumberFormat::FORMAT_NUMBER_00,
+            'C' => NumberFormat::FORMAT_NUMBER_00,
+            'D' => NumberFormat::FORMAT_NUMBER_00,
+            'E' => NumberFormat::FORMAT_NUMBER_00,
+            'F' => NumberFormat::FORMAT_NUMBER_00,
+            'G' => NumberFormat::FORMAT_NUMBER_00,
+        ];
+    }
 
     public function styles(Worksheet $sheet): array
     {
         $lastRow = $sheet->getHighestRow();
 
+        // Estilo del encabezado (fila 1)
         $headerStyle = [
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 11],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1E40AF']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '1E3A8A']]],
         ];
-
+        $sheet->getStyle('A1:G1')->applyFromArray($headerStyle);
+        
+        // Estilo para títulos de sección
         $sectionStyle = [
-            'font' => ['bold' => true, 'color' => ['rgb' => '1E40AF'], 'size' => 12],
+            'font' => ['bold' => true, 'color' => ['rgb' => '1E40AF'], 'size' => 11],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DBEAFE']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
         ];
-
-        // Aplicar estilo al encabezado de la tabla (fila 2)
-        $sheet->getStyle('A2:E2')->applyFromArray($headerStyle);
-
-        // Estilo para filas de datos
-        for ($row = 3; $row <= $lastRow; $row++) {
-            $metric = $sheet->getCell("A{$row}")->getValue();
-            if ($metric === 'Promedio Global' || $metric === 'Desv. Estándar Global') {
-                $sheet->getStyle("A{$row}:E{$row}")->applyFromArray([
+        
+        // Aplicar estilos a las filas
+        for ($row = 2; $row <= $lastRow; $row++) {
+            $cellValue = $sheet->getCell("A{$row}")->getValue();
+            
+            // Títulos de sección
+            if (in_array($cellValue, ['PROMEDIOS', 'PROMEDIOS POR GRUPO', 'DESVIACIONES ESTÁNDAR', 'DESVIACIONES POR GRUPO', 'TOTALES'])) {
+                $sheet->getStyle("A{$row}:G{$row}")->applyFromArray($sectionStyle);
+            }
+            // Filas CP (normal, fondo claro)
+            elseif (str_contains($cellValue ?? '', ' CP')) {
+                $sheet->getStyle("A{$row}:G{$row}")->applyFromArray([
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F9FAFB']],
+                ]);
+            }
+            // Filas SP (destacadas con negrita - FOCO)
+            elseif (str_contains($cellValue ?? '', ' SP')) {
+                $sheet->getStyle("A{$row}:G{$row}")->applyFromArray([
                     'font' => ['bold' => true],
-                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0F9FF']],
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFFFF']],
+                ]);
+            }
+            // Filas de diferencia
+            elseif (str_contains($cellValue ?? '', 'Diferencia')) {
+                $sheet->getStyle("A{$row}:G{$row}")->applyFromArray([
+                    'font' => ['italic' => true, 'color' => ['rgb' => '6B7280']],
                 ]);
             }
         }
+        
+        // Bordes para toda la tabla
+        $sheet->getStyle("A1:G{$lastRow}")->applyFromArray([
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E2E8F0']]],
+        ]);
+        
+        // Alineación central para datos numéricos
+        $sheet->getStyle("B2:G{$lastRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        
+        // Ancho de primera columna
+        $sheet->getColumnDimension('A')->setWidth(25);
+        
+        // Congelar primera fila
+        $sheet->freezePane('A2');
 
         return [];
     }
