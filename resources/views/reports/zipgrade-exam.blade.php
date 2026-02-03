@@ -107,6 +107,55 @@
             .kpi-grid { grid-template-columns: repeat(2, 1fr); }
             .group-charts-wrapper { grid-template-columns: 1fr; }
         }
+
+        /* Dimension Charts - Full Width Layout */
+        .dimension-charts-container {
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+        }
+
+        .area-section {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px;
+            background: #fafafa;
+        }
+
+        .area-section-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1e40af;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid #3b82f6;
+        }
+
+        .dimension-list {
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        .dimension-chart-wrapper {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+        }
+
+        .dimension-chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .dimension-chart-canvas {
+            height: 350px;
+        }
     </style>
 </head>
 <body>
@@ -313,6 +362,18 @@
             </div>
         </div>
 
+        <!-- Dimension Analysis Section -->
+        @if(!empty($dimensionChartData))
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Análisis por Competencias y Componentes</h2>
+            </div>
+            <div class="dimension-charts-container" id="dimensionChartsContainer">
+                <!-- Los gráficos se generan dinámicamente con JavaScript -->
+            </div>
+        </div>
+        @endif
+
         <!-- Footer -->
         <div class="footer">
             <p>Sistema SABER - Análisis ICFES (Zipgrade) | Generado el {{ $generatedAt }}</p>
@@ -341,7 +402,8 @@
         "areaStatistics": {!! json_encode($statistics->areaStatistics) !!},
         "groupComparison": {!! json_encode($groupComparison) !!},
         "piarComparison": {!! json_encode($piarComparison) !!},
-        "distributions": {!! json_encode($distributions) !!}
+        "distributions": {!! json_encode($distributions) !!},
+        "dimensionChartData": {!! json_encode($dimensionChartData ?? []) !!}
     }
     </script>
 
@@ -748,6 +810,122 @@ ${r?'Expression: "'+r+`"
                             x: { title: { display: true, text: 'Rango de Puntaje' } }
                         }
                     }
+                });
+            }
+
+            // 5. Dimension Charts (Competencias, Componentes, etc.)
+            const dimensionContainer = document.getElementById('dimensionChartsContainer');
+            if (dimensionContainer && reportData.dimensionChartData) {
+
+                // Colores por área
+                const areaChartColors = {
+                    'lectura': '#3b82f6',      // Azul
+                    'matematicas': '#ef4444',  // Rojo
+                    'sociales': '#f59e0b',     // Amarillo/Naranja
+                    'naturales': '#10b981',    // Verde
+                    'ingles': '#8b5cf6'        // Púrpura
+                };
+
+                const conPiarColor = '#9ca3af'; // Gris para CON PIAR
+
+                Object.entries(reportData.dimensionChartData).forEach(([areaKey, areaData]) => {
+                    if (!areaData.dimensions || Object.keys(areaData.dimensions).length === 0) {
+                        return;
+                    }
+
+                    // Crear sección del área
+                    const areaSection = document.createElement('div');
+                    areaSection.className = 'area-section';
+
+                    const areaTitle = document.createElement('h3');
+                    areaTitle.className = 'area-section-title';
+                    areaTitle.textContent = areaData.label;
+                    areaSection.appendChild(areaTitle);
+
+                    const dimensionList = document.createElement('div');
+                    dimensionList.className = 'dimension-list';
+
+                    // Crear gráfico por cada dimensión (ancho completo)
+                    Object.entries(areaData.dimensions).forEach(([dimNum, dimData]) => {
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'dimension-chart-wrapper';
+
+                        const title = document.createElement('div');
+                        title.className = 'dimension-chart-title';
+                        title.textContent = dimData.label;
+                        wrapper.appendChild(title);
+
+                        const canvasContainer = document.createElement('div');
+                        canvasContainer.className = 'dimension-chart-canvas';
+
+                        const canvas = document.createElement('canvas');
+                        canvasContainer.appendChild(canvas);
+                        wrapper.appendChild(canvasContainer);
+                        dimensionList.appendChild(wrapper);
+
+                        // Preparar datos
+                        const labels = dimData.items.map(item => item.name);
+                        const conPiarData = dimData.items.map(item => item.con_piar);
+                        const sinPiarData = dimData.items.map(item => item.sin_piar);
+
+                        // Calcular máximo dinámico
+                        const maxValue = Math.max(...conPiarData, ...sinPiarData) * 1.15;
+
+                        // Crear gráfico
+                        new Chart(canvas, {
+                            type: 'bar',
+                            data: {
+                                labels: labels,
+                                datasets: [
+                                    {
+                                        label: 'SIN PIAR',
+                                        data: sinPiarData,
+                                        backgroundColor: areaChartColors[areaKey],
+                                        borderRadius: 4
+                                    },
+                                    {
+                                        label: 'CON PIAR',
+                                        data: conPiarData,
+                                        backgroundColor: conPiarColor,
+                                        borderRadius: 4
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: {
+                                        position: 'bottom',
+                                        labels: { boxWidth: 12, padding: 15 }
+                                    },
+                                    datalabels: {
+                                        anchor: 'end',
+                                        align: 'top',
+                                        formatter: (value) => Math.round(value),
+                                        font: { size: 10, weight: 'bold' }
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        max: Math.min(Math.ceil(maxValue), 100),
+                                        title: { display: true, text: 'Puntaje Promedio' }
+                                    },
+                                    x: {
+                                        ticks: {
+                                            maxRotation: 45,
+                                            minRotation: 0,
+                                            font: { size: 10 }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    });
+
+                    areaSection.appendChild(dimensionList);
+                    dimensionContainer.appendChild(areaSection);
                 });
             }
         });

@@ -62,6 +62,9 @@ class ZipgradeReportGenerator
         // PIAR comparison - usando MetricsService
         $piarComparison = $this->getPiarComparison($exam, $filters);
 
+        // Dimension analysis by area (for charts)
+        $dimensionChartData = $this->getDimensionChartData($exam);
+
         // Prepare data for the view
         $reportData = [
             'exam' => $exam,
@@ -72,6 +75,7 @@ class ZipgradeReportGenerator
             'distributions' => $distributions,
             'groupComparison' => $groupComparison,
             'piarComparison' => $piarComparison,
+            'dimensionChartData' => $dimensionChartData,
             'generatedAt' => now()->format('Y-m-d H:i:s'),
         ];
 
@@ -470,5 +474,86 @@ class ZipgradeReportGenerator
         }
 
         return sqrt($sum / ($count - 1));
+    }
+
+    /**
+     * Obtiene datos de dimensiones por área para gráficos.
+     * Solo promedios globales (CON PIAR vs SIN PIAR).
+     */
+    private function getDimensionChartData(Exam $exam): array
+    {
+        $areas = [
+            'lectura' => [
+                'label' => 'Lectura Crítica',
+                'dimensions' => [
+                    1 => 'Competencias',
+                    2 => 'Tipos de Texto',
+                    3 => 'Niveles de Lectura',
+                ],
+            ],
+            'matematicas' => [
+                'label' => 'Matemáticas',
+                'dimensions' => [
+                    1 => 'Competencias',
+                    2 => 'Componentes',
+                ],
+            ],
+            'sociales' => [
+                'label' => 'Ciencias Sociales',
+                'dimensions' => [
+                    1 => 'Competencias',
+                    2 => 'Componentes',
+                ],
+            ],
+            'naturales' => [
+                'label' => 'Ciencias Naturales',
+                'dimensions' => [
+                    1 => 'Competencias',
+                    2 => 'Componentes',
+                ],
+            ],
+            'ingles' => [
+                'label' => 'Inglés',
+                'dimensions' => [
+                    1 => 'Partes',
+                ],
+            ],
+        ];
+
+        $result = [];
+
+        foreach ($areas as $areaKey => $areaConfig) {
+            $result[$areaKey] = [
+                'label' => $areaConfig['label'],
+                'dimensions' => [],
+            ];
+
+            foreach ($areaConfig['dimensions'] as $dimNumber => $dimLabel) {
+                $piarData = $this->metricsService->getDimensionPiarComparison($exam, $areaKey, $dimNumber);
+
+                if (empty($piarData)) {
+                    continue;
+                }
+
+                // Extraer solo los promedios globales
+                $dimensionItems = [];
+                foreach ($piarData as $itemName => $itemData) {
+                    $dimensionItems[] = [
+                        'name' => $itemName,
+                        'con_piar' => $itemData['con_piar']['promedio'] ?? 0,
+                        'sin_piar' => $itemData['sin_piar']['promedio'] ?? 0,
+                    ];
+                }
+
+                if (!empty($dimensionItems)) {
+                    $result[$areaKey]['dimensions'][$dimNumber] = [
+                        'label' => $dimLabel,
+                        'items' => $dimensionItems,
+                    ];
+                }
+            }
+        }
+
+        return $result;
     }
 }
