@@ -9,39 +9,39 @@
            1. CSS Variables
            =========================================== */
         :root {
-            /* Primary */
-            --primary-50: #eff6ff;
-            --primary-100: #dbeafe;
-            --primary-200: #bfdbfe;
-            --primary-500: #3b82f6;
-            --primary-600: #2563eb;
-            --primary-700: #1d4ed8;
-            --primary-800: #1e40af;
-            --primary-900: #1e3a8a;
+            /* Primary - Sleek Indigo/Blue */
+            --primary-50: #eef2ff;
+            --primary-100: #e0e7ff;
+            --primary-200: #c7d2fe;
+            --primary-500: #6366f1;
+            --primary-600: #4f46e5;
+            --primary-700: #4338ca;
+            --primary-800: #3730a3;
+            --primary-900: #312e81;
 
             /* Neutrals */
-            --gray-50: #f9fafb;
-            --gray-100: #f3f4f6;
-            --gray-200: #e5e7eb;
-            --gray-300: #d1d5db;
-            --gray-400: #9ca3af;
-            --gray-500: #6b7280;
-            --gray-600: #4b5563;
-            --gray-700: #374151;
-            --gray-800: #1f2937;
-            --gray-900: #111827;
+            --gray-50: #f8fafc;
+            --gray-100: #f1f5f9;
+            --gray-200: #e2e8f0;
+            --gray-300: #cbd5e1;
+            --gray-400: #94a3b8;
+            --gray-500: #64748b;
+            --gray-600: #475569;
+            --gray-700: #334155;
+            --gray-800: #1e293b;
+            --gray-900: #0f172a;
 
             /* Status */
-            --success: #059669;
-            --warning: #d97706;
-            --danger: #dc2626;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
 
-            /* Areas */
-            --area-lectura: #3b82f6;
-            --area-matematicas: #ef4444;
-            --area-sociales: #f59e0b;
-            --area-naturales: #10b981;
-            --area-ingles: #8b5cf6;
+            /* Areas - Vibrant Palette */
+            --area-lectura: #3b82f6;      /* Blue */
+            --area-matematicas: #f43f5e;  /* Rose */
+            --area-sociales: #f59e0b;     /* Amber */
+            --area-naturales: #10b981;    /* Emerald */
+            --area-ingles: #8b5cf6;       /* Violet */
 
             /* Spacing */
             --space-xs: 4px;
@@ -51,16 +51,17 @@
             --space-xl: 32px;
             --space-2xl: 48px;
 
-            /* Shadows */
-            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            /* Shadows - Premium Elevation */
+            --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
 
             /* Border radius */
-            --radius-sm: 6px;
-            --radius-md: 8px;
-            --radius-lg: 12px;
-            --radius-xl: 16px;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
         }
 
         /* ===========================================
@@ -157,12 +158,23 @@
         .section-nav {
             position: sticky;
             top: 0;
-            z-index: 100;
-            background: white;
-            padding: var(--space-sm) 0;
-            margin-bottom: var(--space-lg);
-            border-bottom: 1px solid var(--gray-200);
-            box-shadow: var(--shadow-sm);
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            padding: var(--space-md) 0;
+            margin-bottom: var(--space-xl);
+            border-bottom: 2px solid var(--gray-200);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+            margin-left: calc(-1 * var(--space-lg));
+            margin-right: calc(-1 * var(--space-lg));
+            padding-left: var(--space-lg);
+            padding-right: var(--space-lg);
+            transition: all 0.3s ease;
+        }
+        
+        .section-nav.is-sticky {
+            padding: var(--space-sm) var(--space-lg);
+            border-bottom-color: var(--primary-100);
         }
 
         .nav-inner {
@@ -503,104 +515,227 @@
         .score-null { color: var(--gray-400); font-style: italic; }
 
         /* ===========================================
-           12. Charts
+           12. Charts - Refined Aesthetics
            =========================================== */
-        .chart-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-lg); }
-        .chart-container { background: white; padding: var(--space-lg); border-radius: var(--radius-lg); border: 1px solid var(--gray-200); }
-        .chart-title { font-size: 16px; font-weight: 600; color: var(--gray-700); margin-bottom: var(--space-md); text-align: center; }
-        .chart-wrapper { position: relative; height: 300px; }
-        .group-charts-wrapper { display: flex; flex-direction: column; gap: 40px; }
+        .chart-grid {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-xl);
+        }
+        .chart-container {
+            background: white;
+            padding: var(--space-xl);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--gray-200);
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--gray-700);
+            margin-bottom: var(--space-lg);
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+        .chart-title::before, .chart-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--gray-200);
+        }
+        .chart-wrapper {
+            position: relative;
+            height: 400px; /* Improved default height */
+            width: 100%;
+        }
+        .group-charts-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 48px;
+        }
 
         /* ===========================================
-           13. Top Performers
+           13. Top Performers - Refined Cards
            =========================================== */
         .top-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: var(--space-md);
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: var(--space-lg);
         }
 
         .top-card {
             background: white;
             border-radius: var(--radius-lg);
-            padding: var(--space-lg);
+            padding: 0;
             border: 1px solid var(--gray-200);
-            transition: all 0.2s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--shadow-sm);
         }
 
         .top-card:hover {
-            box-shadow: var(--shadow-md);
-            transform: translateY(-2px);
+            box-shadow: var(--shadow-xl);
+            transform: translateY(-4px);
+            border-color: var(--primary-300);
+        }
+
+        .top-card-header {
+            padding: var(--space-md) var(--space-lg);
+            background: linear-gradient(135deg, var(--gray-50) 0%, white 100%);
+            border-bottom: 2px solid var(--gray-100);
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
         }
 
         .top-title {
-            font-size: 13px;
-            font-weight: 700;
-            color: var(--gray-600);
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--gray-800);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: var(--space-md);
-            padding-bottom: var(--space-sm);
-            border-bottom: 2px solid var(--primary-500);
+            margin: 0;
+            flex: 1;
         }
+
+        .top-area-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            background: var(--primary-50);
+            color: var(--primary-600);
+        }
+
+        /* Area specific colors for icons */
+        /* Area specific colors for icons and borders */
+        .top-card.area-lectura { border-top: 4px solid var(--area-lectura); }
+        .top-card.area-lectura .top-area-icon { background: var(--primary-50); color: var(--area-lectura); }
+        .top-card.area-lectura .top-score { color: var(--area-lectura); background: #ebf5ff; }
+
+        .top-card.area-matematicas { border-top: 4px solid var(--area-matematicas); }
+        .top-card.area-matematicas .top-area-icon { background: #fff1f2; color: var(--area-matematicas); }
+        .top-card.area-matematicas .top-score { color: var(--area-matematicas); background: #fff1f2; }
+
+        .top-card.area-sociales { border-top: 4px solid var(--area-sociales); }
+        .top-card.area-sociales .top-area-icon { background: #fffbeb; color: var(--area-sociales); }
+        .top-card.area-sociales .top-score { color: var(--area-sociales); background: #fffbeb; }
+
+        .top-card.area-naturales { border-top: 4px solid var(--area-naturales); }
+        .top-card.area-naturales .top-area-icon { background: #f0fdf4; color: var(--area-naturales); }
+        .top-card.area-naturales .top-score { color: var(--area-naturales); background: #f0fdf4; }
+
+        .top-card.area-ingles { border-top: 4px solid var(--area-ingles); }
+        .top-card.area-ingles .top-area-icon { background: #f5f3ff; color: var(--area-ingles); }
+        .top-card.area-ingles .top-score { color: var(--area-ingles); background: #f5f3ff; }
+
+        .top-card.area-global { border-top: 4px solid var(--primary-600); }
+        .top-card.area-global .top-area-icon { background: var(--primary-50); color: var(--primary-600); }
+        .top-card.area-global .top-score { color: var(--primary-700); background: var(--primary-50); }
 
         .top-list {
             list-style: none;
+            padding: var(--space-sm) 0;
+            margin: 0;
         }
 
         .top-item {
             display: flex;
             align-items: center;
-            padding: var(--space-sm) 0;
-            gap: var(--space-sm);
+            padding: var(--space-md) var(--space-lg);
+            gap: var(--space-md);
+            transition: background 0.2s ease;
+        }
+
+        .top-item:hover {
+            background: var(--gray-50);
         }
 
         .top-item:not(:last-child) {
-            border-bottom: 1px solid var(--gray-100);
+            border-bottom: 1px solid var(--gray-50);
+        }
+
+        .top-item.is-first {
+            background: linear-gradient(90deg, #fffbeb 0%, white 100%);
         }
 
         .top-rank {
-            width: 28px;
-            height: 28px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 800;
             flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
         }
 
         .top-rank.gold {
-            background: linear-gradient(135deg, #fde047, #facc15);
-            color: #854d0e;
-            box-shadow: 0 2px 4px rgba(250, 204, 21, 0.4);
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: white;
+            border: 2px solid white;
         }
 
         .top-rank.silver {
-            background: linear-gradient(135deg, #e5e7eb, #d1d5db);
-            color: var(--gray-700);
+            background: linear-gradient(135deg, #94a3b8, #64748b);
+            color: white;
+            border: 2px solid white;
         }
 
         .top-rank.bronze {
-            background: linear-gradient(135deg, #fed7aa, #fdba74);
-            color: #9a3412;
+            background: linear-gradient(135deg, #d97706, #b45309);
+            color: white;
+            border: 2px solid white;
+        }
+
+        .top-rank.other {
+            background: var(--gray-100);
+            color: var(--gray-500);
+            border: 2px solid white;
+        }
+
+        .top-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
         }
 
         .top-name {
-            flex: 1;
             font-size: 13px;
-            font-weight: 500;
-            color: var(--gray-700);
+            font-weight: 700;
+            color: var(--gray-800);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
+        .top-group {
+            font-size: 11px;
+            color: var(--gray-500);
+            font-weight: 500;
+        }
+
         .top-score {
-            font-weight: 700;
+            font-weight: 900;
             color: var(--primary-700);
-            font-size: 14px;
+            font-size: 16px;
+            font-family: monospace;
+            background: var(--primary-50);
+            padding: 4px 10px;
+            border-radius: 8px;
         }
 
         /* ===========================================
@@ -631,27 +766,11 @@
         .dimension-list {
             display: flex;
             flex-direction: column;
-            gap: 32px;
+            gap: 24px;
         }
 
-        .dimension-chart-wrapper {
-            background: white;
-            border-radius: var(--radius-md);
-            padding: var(--space-lg);
-            box-shadow: var(--shadow-sm);
-            width: 100%;
-        }
-
-        .dimension-chart-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--gray-700);
-            margin-bottom: var(--space-md);
-            text-align: center;
-        }
-
-        .dimension-chart-canvas {
-            height: 350px;
+        .chart-wrapper {
+            height: 350px; /* Standardize all charts */
         }
 
         /* ===========================================
@@ -674,21 +793,61 @@
         .acierto-bajo { color: var(--danger); font-weight: 600; }
 
         /* ===========================================
-           16. Footer
+           16. Footer - Premium Redesign
            =========================================== */
         .footer {
             text-align: center;
-            padding: var(--space-xl);
-            color: var(--gray-500);
-            font-size: 12px;
+            padding: var(--space-2xl) var(--space-xl);
+            color: var(--gray-600);
+            font-size: 14px;
             margin-top: var(--space-2xl);
-            background: var(--gray-50);
+            background: linear-gradient(to bottom, transparent 0%, var(--gray-50) 100%);
             border-top: 1px solid var(--gray-200);
-            border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--space-sm);
         }
 
-        .footer p {
-            margin-bottom: var(--space-xs);
+        .footer-brand {
+            font-weight: 800;
+            color: var(--gray-800);
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .footer-tag {
+            background: var(--primary-100);
+            color: var(--primary-800);
+            padding: 4px 12px;
+            border-radius: 50px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .footer-offline {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--success);
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .footer-offline::before {
+            content: '✓';
+            width: 18px;
+            height: 18px;
+            background: var(--success);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
         }
 
         /* ===========================================
@@ -708,7 +867,67 @@
         }
 
         /* ===========================================
-           18. Responsive
+           18. Accordion Styles (Tables only)
+           =========================================== */
+        .card-accordion {
+            border: 2px solid var(--primary-200);
+        }
+
+        .card-accordion .accordion-header {
+            background: linear-gradient(135deg, var(--primary-50) 0%, white 100%);
+            cursor: pointer;
+            border-bottom: 2px solid var(--primary-200);
+            transition: all 0.2s ease;
+        }
+
+        .card-accordion .accordion-header:hover {
+            background: linear-gradient(135deg, var(--primary-100) 0%, var(--primary-50) 100%);
+            border-bottom-color: var(--primary-400);
+        }
+
+        .card-accordion .accordion-header:active {
+            transform: scale(0.998);
+        }
+
+        .accordion-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            background: white;
+            border: 2px solid var(--primary-500);
+            border-radius: 50%;
+            color: var(--primary-600);
+            font-size: 11px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+        }
+
+        .accordion-header:hover .accordion-icon {
+            background: var(--primary-500);
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .accordion-hint {
+            font-size: 12px;
+            color: var(--gray-500);
+            font-weight: 500;
+            font-style: italic;
+            background: var(--gray-100);
+            padding: 4px 12px;
+            border-radius: 20px;
+            transition: all 0.2s ease;
+        }
+
+        .accordion-header:hover .accordion-hint {
+            background: var(--primary-100);
+            color: var(--primary-700);
+        }
+
+        /* ===========================================
+           19. Responsive
            =========================================== */
         @media (max-width: 1024px) {
             .kpi-grid { grid-template-columns: repeat(3, 1fr); }
@@ -772,14 +991,10 @@
 
         <!-- KPIs Section -->
         <div class="card" id="kpis">
-            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
-                <h2 class="card-title">
-                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
-                    Indicadores Principales
-                </h2>
-                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
+            <div class="card-header">
+                <h2 class="card-title">Indicadores Principales</h2>
             </div>
-            <div class="card-body" x-show="!collapsed" x-transition>
+            <div class="card-body">
             <div class="kpi-grid">
                 <div class="kpi-card">
                     <div class="kpi-label">Total Estudiantes</div>
@@ -808,13 +1023,13 @@
         </div>
 
         <!-- Student List Section -->
-        <div class="card" id="estudiantes" x-data="studentTable()">
-            <div class="card-header" @click="expanded = !expanded" style="cursor: pointer; user-select: none;">
+        <div class="card card-accordion" id="estudiantes" x-data="studentTable()">
+            <div class="card-header accordion-header" @click="expanded = !expanded">
                 <h2 class="card-title">
-                    <span x-text="expanded ? '▼' : '▶'" style="display: inline-block; width: 24px; color: #3b82f6;"></span>
+                    <span class="accordion-icon" x-text="expanded ? '▼' : '▶'"></span>
                     Listado de Estudiantes
                 </h2>
-                <span x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'" style="font-size: 12px; color: #6b7280;"></span>
+                <span class="accordion-hint" x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'"></span>
             </div>
             
             <div class="card-body" x-show="expanded" x-transition>
@@ -892,14 +1107,10 @@
         <!-- Distribución Global -->
         @if(!empty($distributions['global']))
         <div class="card" id="distribucion">
-            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
-                <h2 class="card-title">
-                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
-                    Distribución de Puntajes Globales
-                </h2>
-                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
+            <div class="card-header">
+                <h2 class="card-title">Distribución de Puntajes Globales</h2>
             </div>
-            <div class="card-body" x-show="!collapsed" x-transition>
+            <div class="card-body">
             <div class="chart-wrapper" style="height: 400px;">
                 <canvas id="chartDistribution"></canvas>
             </div>
@@ -909,24 +1120,42 @@
 
         <!-- Top Performers -->
         <div class="card" id="top5">
-            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
-                <h2 class="card-title">
-                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
-                    Top 5 por Área
-                </h2>
+            <div class="card-header">
+                <h2 class="card-title">Top 5 por Área</h2>
+            </div>
                 <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
             </div>
             <div class="card-body" x-show="!collapsed" x-transition>
             <div class="top-grid">
                 @foreach($topPerformers as $area => $performers)
-                <div class="top-card">
-                    <div class="top-title">{{ $area === 'global' ? 'Puntaje Global' : ucfirst($area) }}</div>
+                @php
+                    $areaKey = strtolower($area);
+                    $icon = match($areaKey) {
+                        'lectura' => '📖',
+                        'matematicas' => '📐',
+                        'sociales' => '⚖️',
+                        'naturales' => '🌿',
+                        'ingles' => '🇬🇧',
+                        'global' => '🏆',
+                        default => '📊'
+                    };
+                @endphp
+                <div class="top-card area-{{ $areaKey }}">
+                    <div class="top-card-header">
+                        <div class="top-area-icon">{{ $icon }}</div>
+                        <h3 class="top-title">{{ $area === 'global' ? 'Puntaje Global' : ucfirst($area) }}</h3>
+                    </div>
                     <ul class="top-list">
                         @foreach($performers as $index => $performer)
-                        <li class="top-item">
-                            <span class="top-rank {{ $index === 0 ? 'gold' : ($index === 1 ? 'silver' : ($index === 2 ? 'bronze' : '')) }}">{{ $index + 1 }}</span>
-                            <span class="top-name">{{ $performer->student->first_name ?? 'N/A' }} {{ $performer->student->last_name ?? '' }}</span>
-                            <span class="top-score">{{ $area === 'global' ? $performer->global_score : number_format($performer->{$area}, 2) }}</span>
+                        <li class="top-item {{ $index === 0 ? 'is-first' : '' }}">
+                            <span class="top-rank {{ $index === 0 ? 'gold' : ($index === 1 ? 'silver' : ($index === 2 ? 'bronze' : 'other')) }}">
+                                {{ $index + 1 }}
+                            </span>
+                            <div class="top-info">
+                                <span class="top-name">{{ $performer->student->first_name ?? 'N/A' }} {{ $performer->student->last_name ?? '' }}</span>
+                                <span class="top-group">Grupo: {{ $performer->enrollment->group ?? '?' }}</span>
+                            </div>
+                            <span class="top-score">{{ $area === 'global' ? $performer->global_score : number_format($performer->{$area}, 1) }}</span>
                         </li>
                         @endforeach
                     </ul>
@@ -938,14 +1167,10 @@
 
         <!-- Charts Section -->
         <div class="card" id="graficos">
-            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
-                <h2 class="card-title">
-                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
-                    Gráficos y Visualizaciones
-                </h2>
-                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
+            <div class="card-header">
+                <h2 class="card-title">Gráficos y Visualizaciones</h2>
             </div>
-            <div class="card-body" x-show="!collapsed" x-transition>
+            <div class="card-body">
             <div class="chart-grid">
                 <!-- Promedios por área (CON PIAR vs SIN PIAR) -->
                 @if(isset($piarComparison['piar']) && isset($piarComparison['non_piar']))
@@ -981,14 +1206,10 @@
         <!-- Dimension Analysis Section -->
         @if(!empty($dimensionChartData))
         <div class="card" id="dimensiones">
-            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
-                <h2 class="card-title">
-                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
-                    Análisis por Competencias y Componentes
-                </h2>
-                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
+            <div class="card-header">
+                <h2 class="card-title">Análisis por Competencias y Componentes</h2>
             </div>
-            <div class="card-body" x-show="!collapsed" x-transition>
+            <div class="card-body">
             <div class="dimension-charts-container" id="dimensionChartsContainer">
                 <!-- Los gráficos se generan dinámicamente con JavaScript -->
             </div>
@@ -998,13 +1219,13 @@
 
         <!-- Question Analysis Section -->
         @if(!empty($questionAnalysisData))
-        <div class="card" id="preguntas" x-data="questionTable()">
-            <div class="card-header" @click="expanded = !expanded">
+        <div class="card card-accordion" id="preguntas" x-data="questionTable()">
+            <div class="card-header accordion-header" @click="expanded = !expanded">
                 <h2 class="card-title">
-                    <span x-text="expanded ? '▼' : '▶'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
+                    <span class="accordion-icon" x-text="expanded ? '▼' : '▶'"></span>
                     Análisis por Pregunta
                 </h2>
-                <span class="card-toggle" x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'"></span>
+                <span class="accordion-hint" x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'"></span>
             </div>
 
             <div class="card-body" x-show="expanded" x-transition>
@@ -1090,8 +1311,10 @@
 
         <!-- Footer -->
         <div class="footer">
-            <p>Sistema SABER - Análisis ICFES (Zipgrade)</p>
-            <p>Este informe funciona completamente offline</p>
+            <div class="footer-brand">
+                Sistema SABER <span class="footer-tag">Análisis ICFES (Zipgrade)</span>
+            </div>
+            <div class="footer-offline">Este informe funciona completamente offline</div>
         </div>
     </div>
 
@@ -1514,26 +1737,20 @@ ${r?'Expression: "'+r+`"
                 const areasToChart = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'];
 
                 areasToChart.forEach(areaKey => {
-                    // Crear wrapper y canvas
+                    // Crear wrapper y canvas usando las clases CSS globales
                     const wrapper = document.createElement('div');
-                    wrapper.style.display = 'block';
-                    wrapper.style.marginBottom = '40px';
-                    wrapper.style.background = '#fff';
-                    wrapper.style.padding = '15px';
-                    wrapper.style.borderRadius = '8px';
-                    wrapper.style.border = '1px solid #e2e8f0';
+                    wrapper.className = 'chart-container';
+                    wrapper.style.boxShadow = 'none';
+                    wrapper.style.border = '1px solid var(--gray-100)';
+                    wrapper.style.marginBottom = '32px';
 
-                    const title = document.createElement('h3');
+                    const title = document.createElement('div');
+                    title.className = 'chart-title';
                     title.innerText = areaLabels[areaKey];
-                    title.style.textAlign = 'center';
-                    title.style.marginBottom = '15px';
                     title.style.color = areaChartColors[areaKey];
-                    title.style.fontSize = '18px';
-                    title.style.fontWeight = '600';
 
                     const canvasContainer = document.createElement('div');
-                    canvasContainer.style.height = '280px';
-                    canvasContainer.style.position = 'relative';
+                    canvasContainer.className = 'chart-wrapper';
 
                     const canvas = document.createElement('canvas');
 
@@ -1542,7 +1759,7 @@ ${r?'Expression: "'+r+`"
                     wrapper.appendChild(canvasContainer);
                     groupContainer.appendChild(wrapper);
 
-                    // Preparar datos: para cada grupo, obtener CON PIAR y SIN PIAR de esta área
+                    // Preparar datos
                     const conPiarData = groups.map(groupKey => {
                         const groupData = reportData.groupComparison[groupKey];
                         return groupData[areaKey]?.piar || 0;
@@ -1578,21 +1795,25 @@ ${r?'Expression: "'+r+`"
                             responsive: true,
                             maintainAspectRatio: false,
                             plugins: {
-                                legend: { position: 'bottom' },
+                                legend: { 
+                                    position: 'bottom',
+                                    labels: { boxWidth: 12, padding: 15 }
+                                },
                                 datalabels: {
                                     anchor: 'end',
                                     align: 'top',
                                     formatter: Math.round,
+                                    font: { size: 10, weight: 'bold' }
                                 }
                             },
                             scales: {
                                 y: {
                                     beginAtZero: true,
                                     max: Math.min(Math.ceil(maxValue), 100),
-                                    title: { display: true, text: 'Puntaje Promedio' }
+                                    title: { display: true, text: 'Puntaje Promedio', font: { size: 11 } }
                                 },
                                 x: {
-                                    title: { display: true, text: 'Grupo' }
+                                    title: { display: true, text: 'Grupo', font: { size: 11 } }
                                 }
                             }
                         }
@@ -1614,7 +1835,7 @@ ${r?'Expression: "'+r+`"
                         datasets: [{
                             label: 'Cantidad de Estudiantes',
                             data: data,
-                            backgroundColor: '#3b82f6',
+                            backgroundColor: '#6366f1', // Indigo primary
                             borderRadius: 6
                         }]
                     },
@@ -1664,6 +1885,7 @@ ${r?'Expression: "'+r+`"
                     const areaTitle = document.createElement('h3');
                     areaTitle.className = 'area-section-title';
                     areaTitle.textContent = areaData.label;
+                    areaTitle.style.borderColor = areaChartColors[areaKey];
                     areaSection.appendChild(areaTitle);
 
                     const dimensionList = document.createElement('div');
@@ -1672,15 +1894,17 @@ ${r?'Expression: "'+r+`"
                     // Crear gráfico por cada dimensión (ancho completo)
                     Object.entries(areaData.dimensions).forEach(([dimNum, dimData]) => {
                         const wrapper = document.createElement('div');
-                        wrapper.className = 'dimension-chart-wrapper';
+                        wrapper.className = 'chart-container';
+                        wrapper.style.marginBottom = '24px';
+                        wrapper.style.boxShadow = 'none'; // Sub-containers don't need double shadow
 
                         const title = document.createElement('div');
-                        title.className = 'dimension-chart-title';
+                        title.className = 'chart-title';
                         title.textContent = dimData.label;
                         wrapper.appendChild(title);
 
                         const canvasContainer = document.createElement('div');
-                        canvasContainer.className = 'dimension-chart-canvas';
+                        canvasContainer.className = 'chart-wrapper';
 
                         const canvas = document.createElement('canvas');
                         canvasContainer.appendChild(canvas);
@@ -1705,13 +1929,13 @@ ${r?'Expression: "'+r+`"
                                         label: 'SIN PIAR',
                                         data: sinPiarData,
                                         backgroundColor: areaChartColors[areaKey],
-                                        borderRadius: 4
+                                        borderRadius: 6
                                     },
                                     {
                                         label: 'CON PIAR',
                                         data: conPiarData,
                                         backgroundColor: conPiarColor,
-                                        borderRadius: 4
+                                        borderRadius: 6
                                     }
                                 ]
                             },
@@ -1752,6 +1976,40 @@ ${r?'Expression: "'+r+`"
                     dimensionContainer.appendChild(areaSection);
                 });
             }
+
+            // Scroll tracking for active links and sticky states
+            window.addEventListener('scroll', () => {
+                const nav = document.getElementById('sectionNav');
+                const scrollPos = window.scrollY;
+                
+                // Add a state class for sticky
+                if (scrollPos > 100) {
+                    nav.classList.add('is-sticky');
+                } else {
+                    nav.classList.remove('is-sticky');
+                }
+
+                // Update active link
+                const sections = ['kpis', 'estudiantes', 'distribucion', 'top5', 'graficos', 'dimensiones', 'preguntas'];
+                let current = '';
+
+                sections.forEach(id => {
+                    const section = document.getElementById(id);
+                    if (section) {
+                        const top = section.offsetTop - 120;
+                        if (scrollPos >= top) {
+                            current = id;
+                        }
+                    }
+                });
+
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href') === `#${current}`) {
+                        link.classList.add('active');
+                    }
+                });
+            });
         });
     </script>
 </body>
