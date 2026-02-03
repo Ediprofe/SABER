@@ -1119,10 +1119,9 @@
         @endif
 
         <!-- Top Performers -->
-        <div class="card" id="top5">
-            <div class="card-header">
+        <div class="card" id="top5" x-data="{ collapsed: false }">
+            <div class="card-header" @click="collapsed = !collapsed">
                 <h2 class="card-title">Top 5 por Área</h2>
-            </div>
                 <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
             </div>
             <div class="card-body" x-show="!collapsed" x-transition>
