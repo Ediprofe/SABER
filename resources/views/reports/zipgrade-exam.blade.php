@@ -205,10 +205,6 @@
                     <span>Grupo: {{ $filters['group'] }}</span>
                 </div>
                 @endif
-                <div class="header-meta-item">
-                    <span>⏰</span>
-                    <span>Generado: {{ $generatedAt }}</span>
-                </div>
             </div>
         </div>
 
@@ -245,10 +241,15 @@
 
         <!-- Student List Section -->
         <div class="card" x-data="studentTable()">
-            <div class="card-header">
-                <h2 class="card-title">Listado de Estudiantes</h2>
+            <div class="card-header" @click="expanded = !expanded" style="cursor: pointer; user-select: none;">
+                <h2 class="card-title">
+                    <span x-text="expanded ? '▼' : '▶'" style="display: inline-block; width: 24px; color: #3b82f6;"></span>
+                    Listado de Estudiantes
+                </h2>
+                <span x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'" style="font-size: 12px; color: #6b7280;"></span>
             </div>
             
+            <div x-show="expanded" x-transition style="overflow: hidden;">
             <div class="controls no-print">
                 <div class="input-group">
                     <label class="input-label">Buscar estudiante</label>
@@ -316,6 +317,7 @@
                 <div x-show="filteredStudents.length === 0" style="text-align: center; padding: 40px; color: #6b7280;">
                     No se encontraron estudiantes con los filtros aplicados.
                 </div>
+            </div>
             </div>
         </div>
 
@@ -406,10 +408,15 @@
         <!-- Question Analysis Section -->
         @if(!empty($questionAnalysisData))
         <div class="card" x-data="questionTable()">
-            <div class="card-header">
-                <h2 class="card-title">Análisis por Pregunta</h2>
+            <div class="card-header" @click="expanded = !expanded" style="cursor: pointer; user-select: none;">
+                <h2 class="card-title">
+                    <span x-text="expanded ? '▼' : '▶'" style="display: inline-block; width: 24px; color: #3b82f6;"></span>
+                    Análisis por Pregunta
+                </h2>
+                <span x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'" style="font-size: 12px; color: #6b7280;"></span>
             </div>
 
+            <div x-show="expanded" x-transition style="overflow: hidden;">
             <div class="controls no-print">
                 <div class="input-group">
                     <label class="input-label">Filtrar por área</label>
@@ -486,12 +493,13 @@
             <div style="margin-top: 16px; padding: 12px; background: #fef3c7; border-radius: 8px; font-size: 13px;">
                 <strong>Nota:</strong> Las filas resaltadas en amarillo indican preguntas donde la respuesta más elegida NO es la correcta (el distractor "ganó").
             </div>
+            </div>
         </div>
         @endif
 
         <!-- Footer -->
         <div class="footer">
-            <p>Sistema SABER - Análisis ICFES (Zipgrade) | Generado el {{ $generatedAt }}</p>
+            <p>Sistema SABER - Análisis ICFES (Zipgrade)</p>
             <p>Este informe funciona completamente offline</p>
         </div>
     </div>
@@ -531,6 +539,7 @@
         // Alpine.js Student Table Component
         function studentTable() {
             return {
+                expanded: true,
                 students: reportData.students,
                 search: '',
                 groupFilter: '',
@@ -612,6 +621,7 @@
         // Alpine.js Question Table Component
         function questionTable() {
             return {
+                expanded: true,
                 questions: reportData.questionAnalysisData || [],
                 areaFilter: '',
                 sessionFilter: '',
@@ -823,7 +833,7 @@ ${r?'Expression: "'+r+`"
                             datalabels: {
                                 anchor: 'end',
                                 align: 'top',
-                                formatter: (value) => Math.round(value * 100) / 100,
+                                formatter: (value) => Math.round(value),
                             },
                         },
                         scales: {
@@ -874,7 +884,7 @@ ${r?'Expression: "'+r+`"
                             datalabels: {
                                 anchor: 'end',
                                 align: 'top',
-                                formatter: (value) => (Math.round(value * 100) / 100).toFixed(2),
+                                formatter: (value) => Math.round(value),
                             }
                         },
                         scales: {
