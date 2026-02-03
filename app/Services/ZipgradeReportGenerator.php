@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Enrollment;
 use App\Models\Exam;
 use App\Models\ExamSession;
+use App\Support\AreaConfig;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\View;
 
@@ -147,13 +148,7 @@ class ZipgradeReportGenerator
 
         // Calculate area statistics
         $areaStatistics = [];
-        $areaLabels = [
-            'lectura' => 'Lectura',
-            'matematicas' => 'Matemáticas',
-            'sociales' => 'Sociales',
-            'naturales' => 'Naturales',
-            'ingles' => 'Inglés',
-        ];
+        $areaLabels = AreaConfig::AREA_LABELS;
 
         foreach ($areaScores as $area => $values) {
             if (! empty($values)) {

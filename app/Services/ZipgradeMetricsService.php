@@ -10,18 +10,14 @@ use App\Models\TagHierarchy;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
+use App\Support\AreaConfig;
+
 class ZipgradeMetricsService
 {
-    /**
-     * Mapeo de áreas a posibles nombres de tags
-     */
-    private array $areaMappings = [
-        'lectura' => ['Lectura', 'Lectura Crítica', 'Lectura critica', 'lectura', 'Lectura critica'],
-        'matematicas' => ['Matemáticas', 'Matemáticas', 'matematicas', 'Matemática', 'Mat'],
-        'sociales' => ['Sociales', 'Ciencias Sociales', 'ciencias sociales', 'sociales', 'Social'],
-        'naturales' => ['Ciencias', 'Naturales', 'Ciencias Naturales', 'ciencias naturales', 'naturales'],
-        'ingles' => ['Inglés', 'Ingles', 'ingles', 'English'],
-    ];
+    private array $cachedAreaTags = [];
+    private array $cachedQuestionIdsByArea = [];
+    private array $cachedStudentAllScores = [];
+    private array $cachedStudentDimensionScores = [];
 
     /**
      * Calcula puntaje por tag para un estudiante.
@@ -70,28 +66,28 @@ class ZipgradeMetricsService
         Exam $exam,
         string $area
     ): float {
-        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+        $cacheKey = $exam->id.'_'.$area;
 
-        // Buscar el tag de área correspondiente
-        $possibleNames = $this->areaMappings[$area] ?? [$area];
-        $areaTag = TagHierarchy::whereIn('tag_name', $possibleNames)
-            ->where('tag_type', 'area')
-            ->first();
+        if (! isset($this->cachedQuestionIdsByArea[$cacheKey])) {
+            $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+            $areaTag = $this->findAreaTag($area);
 
-        if (! $areaTag) {
-            return 0.0;
+            if (! $areaTag) {
+                $this->cachedQuestionIdsByArea[$cacheKey] = collect();
+            } else {
+                $this->cachedQuestionIdsByArea[$cacheKey] = DB::table('exam_questions')
+                    ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
+                    ->whereIn('exam_questions.exam_session_id', $sessionIds)
+                    ->where(function ($query) use ($areaTag, $area) {
+                        $query->where('question_tags.tag_hierarchy_id', $areaTag->id)
+                            ->orWhere('question_tags.inferred_area', $area);
+                    })
+                    ->distinct()
+                    ->pluck('exam_questions.id');
+            }
         }
 
-        // Obtener todas las preguntas de esta área (CORREGIDO: usar DISTINCT en SQL)
-        $questionIds = DB::table('exam_questions')
-            ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
-            ->whereIn('exam_questions.exam_session_id', $sessionIds)
-            ->where(function ($query) use ($areaTag, $area) {
-                $query->where('question_tags.tag_hierarchy_id', $areaTag->id)
-                    ->orWhere('question_tags.inferred_area', $area);
-            })
-            ->distinct()
-            ->pluck('exam_questions.id');
+        $questionIds = $this->cachedQuestionIdsByArea[$cacheKey];
 
         if ($questionIds->isEmpty()) {
             return 0.0;
@@ -133,7 +129,12 @@ class ZipgradeMetricsService
         Enrollment $enrollment,
         Exam $exam
     ): array {
-        return [
+        $cacheKey = $enrollment->id.'_'.$exam->id;
+        if (isset($this->cachedStudentAllScores[$cacheKey])) {
+            return $this->cachedStudentAllScores[$cacheKey];
+        }
+
+        $scores = [
             'lectura' => $this->getStudentAreaScore($enrollment, $exam, 'lectura'),
             'matematicas' => $this->getStudentAreaScore($enrollment, $exam, 'matematicas'),
             'sociales' => $this->getStudentAreaScore($enrollment, $exam, 'sociales'),
@@ -141,6 +142,10 @@ class ZipgradeMetricsService
             'ingles' => $this->getStudentAreaScore($enrollment, $exam, 'ingles'),
             'global' => $this->getStudentGlobalScore($enrollment, $exam),
         ];
+
+        $this->cachedStudentAllScores[$cacheKey] = $scores;
+
+        return $scores;
     }
 
     /**
@@ -292,11 +297,7 @@ class ZipgradeMetricsService
 
             if ($tag) {
                 // Encontrar el key del área
-                foreach ($this->areaMappings as $area => $names) {
-                    if (in_array($tagName, $names)) {
-                        return $area;
-                    }
-                }
+                return AreaConfig::normalizeAreaName($tagName);
             }
         }
 
@@ -307,11 +308,7 @@ class ZipgradeMetricsService
                 ->first();
 
             if ($tag && $tag->parent_area) {
-                foreach ($this->areaMappings as $area => $names) {
-                    if (in_array($tag->parent_area, $names)) {
-                        return $area;
-                    }
-                }
+                return AreaConfig::normalizeAreaName($tag->parent_area);
             }
         }
 
@@ -675,11 +672,19 @@ class ZipgradeMetricsService
      */
     private function findAreaTag(string $area): ?TagHierarchy
     {
-        $possibleNames = $this->areaMappings[$area] ?? [$area];
+        if (isset($this->cachedAreaTags[$area])) {
+            return $this->cachedAreaTags[$area];
+        }
 
-        return TagHierarchy::whereIn('tag_name', $possibleNames)
+        $possibleNames = AreaConfig::AREA_MAPPINGS[$area] ?? [$area];
+
+        $tag = TagHierarchy::whereIn('tag_name', $possibleNames)
             ->where('tag_type', 'area')
             ->first();
+
+        $this->cachedAreaTags[$area] = $tag;
+
+        return $tag;
     }
 
     /**
@@ -727,6 +732,11 @@ class ZipgradeMetricsService
      */
     public function getStudentDimensionScores(Enrollment $enrollment, Exam $exam, string $area): array
     {
+        $cacheKey = $enrollment->id.'_'.$exam->id.'_'.$area;
+        if (isset($this->cachedStudentDimensionScores[$cacheKey])) {
+            return $this->cachedStudentDimensionScores[$cacheKey];
+        }
+
         $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
         $areaTag = $this->findAreaTag($area);
 
@@ -787,6 +797,8 @@ class ZipgradeMetricsService
                 $result[$tagType] = $typeScores;
             }
         }
+
+        $this->cachedStudentDimensionScores[$cacheKey] = $result;
 
         return $result;
     }
