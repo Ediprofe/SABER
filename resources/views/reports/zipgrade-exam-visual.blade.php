@@ -350,7 +350,7 @@
                             datalabels: {
                                 anchor: 'end',
                                 align: 'top',
-                                formatter: (value) => value.toFixed(1),
+                                formatter: (value) => Math.round(value),
                                 font: { weight: 'bold', size: 14 },
                                 color: '#374151'
                             }
@@ -403,7 +403,7 @@
                             datalabels: {
                                 anchor: 'end',
                                 align: 'top',
-                                formatter: (value) => value.toFixed(2),
+                                formatter: (value) => Math.round(value),
                                 font: { weight: 'bold', size: 14 },
                                 color: '#374151'
                             }

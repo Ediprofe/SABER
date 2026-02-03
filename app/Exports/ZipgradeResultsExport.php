@@ -100,7 +100,11 @@ class CompleteResultsSheet implements FromCollection, ShouldAutoSize, WithColumn
             $query->where('is_piar', $this->piarFilter);
         }
 
-        return $query->get();
+        return $query->join('students', 'enrollments.student_id', '=', 'students.id')
+            ->orderBy('students.last_name')
+            ->orderBy('students.first_name')
+            ->select('enrollments.*')
+            ->get();
     }
 
     /**
@@ -204,15 +208,15 @@ class CompleteResultsSheet implements FromCollection, ShouldAutoSize, WithColumn
 
         $baseRow = [
             $student->document_id ?? $student->code,
-            $student->first_name.' '.$student->last_name,
+            $student->last_name.' '.$student->first_name,
             $enrollment->group,
             $enrollment->is_piar ? 'SI' : 'NO',
-            round($lectura),
-            round($matematicas),
-            round($sociales),
-            round($naturales),
-            round($ingles),
-            $global,
+            round($lectura, 0),
+            round($matematicas, 0),
+            round($sociales, 0),
+            round($naturales, 0),
+            round($ingles, 0),
+            round($global, 0),
         ];
 
         // Agregar valores de dimensiones
@@ -257,6 +261,7 @@ class CompleteResultsSheet implements FromCollection, ShouldAutoSize, WithColumn
 
                 // Aplicar AutoFilter a todo el rango de datos (A1 hasta la última columna y fila)
                 $event->sheet->getDelegate()->setAutoFilter("A1:{$lastColumn}{$lastRow}");
+                $event->sheet->getDelegate()->setSelectedCells('A1');
             },
         ];
     }
@@ -327,6 +332,9 @@ class CompleteResultsSheet implements FromCollection, ShouldAutoSize, WithColumn
 
         // Congelar columnas A y B, y la primera fila
         $sheet->freezePane('C2');
+
+        // Resetear selección
+        $sheet->setSelectedCells('A1');
 
         return [];
     }
@@ -470,6 +478,7 @@ class AnonymizedResultsSheet implements FromCollection, ShouldAutoSize, WithColu
 
                 // Aplicar AutoFilter a todo el rango de datos (A1 hasta la última columna y fila)
                 $event->sheet->getDelegate()->setAutoFilter("A1:{$lastColumn}{$lastRow}");
+                $event->sheet->getDelegate()->setSelectedCells('A1');
             },
         ];
     }
@@ -748,6 +757,7 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
                 $lastRow = $event->sheet->getHighestRow();
                 $lastColumn = $event->sheet->getHighestColumn();
                 $event->sheet->getDelegate()->setAutoFilter("A1:{$lastColumn}{$lastRow}");
+                $event->sheet->getDelegate()->setSelectedCells('A1');
             },
         ];
     }
@@ -772,6 +782,7 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
             $sheet->getStyle("A{$row}:Q{$row}")->applyFromArray([
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fillColor]],
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E2E8F0']]],
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
             ]);
         }
 
@@ -1144,9 +1155,11 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
             $colIndex++;
         }
         
-        // Congelar primera columna y filas superiores si es necesario
-        // Pero dado el formato variable, mejor congelar solo columna A
-        $sheet->freezePane('B1');
+        // Congelar primera columna (A) para que el nombre del ítem siempre sea visible
+        $sheet->freezePane('B2'); // Congela A y la fila 1 (encabezados)
+
+        // IMPORTANTE: Resetear la selección a A1 para evitar que aparezca todo sombreado/seleccionado
+        $sheet->setSelectedCells('A1');
 
         return [];
     }
@@ -1221,7 +1234,11 @@ class PlanillaSheet implements FromCollection, ShouldAutoSize, WithColumnFormatt
             $query->where('is_piar', $this->piarFilter);
         }
 
-        return $query->get();
+        return $query->join('students', 'enrollments.student_id', '=', 'students.id')
+            ->orderBy('students.last_name')
+            ->orderBy('students.first_name')
+            ->select('enrollments.*')
+            ->get();
     }
 
     public function headings(): array
@@ -1253,14 +1270,14 @@ class PlanillaSheet implements FromCollection, ShouldAutoSize, WithColumnFormatt
         // Áreas: (score / 100) * 5
         // Global: (score / 500) * 5
         return [
-            $student->first_name.' '.$student->last_name,
+            $student->last_name.' '.$student->first_name,
             $enrollment->group,
-            round(($lectura / 100) * 5, 2),
-            round(($matematicas / 100) * 5, 2),
-            round(($sociales / 100) * 5, 2),
-            round(($naturales / 100) * 5, 2),
-            round(($ingles / 100) * 5, 2),
-            round(($global / 500) * 5, 2),
+            round(($lectura / 100) * 5, 1),
+            round(($matematicas / 100) * 5, 1),
+            round(($sociales / 100) * 5, 1),
+            round(($naturales / 100) * 5, 1),
+            round(($ingles / 100) * 5, 1),
+            round(($global / 500) * 5, 1),
         ];
     }
 
@@ -1276,6 +1293,7 @@ class PlanillaSheet implements FromCollection, ShouldAutoSize, WithColumnFormatt
                 $lastRow = $event->sheet->getHighestRow();
                 $lastColumn = $event->sheet->getHighestColumn();
                 $event->sheet->getDelegate()->setAutoFilter("A1:{$lastColumn}{$lastRow}");
+                $event->sheet->getDelegate()->setSelectedCells('A1');
             },
         ];
     }
@@ -1314,12 +1332,12 @@ class PlanillaSheet implements FromCollection, ShouldAutoSize, WithColumnFormatt
     public function columnFormats(): array
     {
         return [
-            'C' => NumberFormat::FORMAT_NUMBER_00,
-            'D' => NumberFormat::FORMAT_NUMBER_00,
-            'E' => NumberFormat::FORMAT_NUMBER_00,
-            'F' => NumberFormat::FORMAT_NUMBER_00,
-            'G' => NumberFormat::FORMAT_NUMBER_00,
-            'H' => NumberFormat::FORMAT_NUMBER_00,
+            'C' => '0.0',
+            'D' => '0.0',
+            'E' => '0.0',
+            'F' => '0.0',
+            'G' => '0.0',
+            'H' => '0.0',
         ];
     }
 }
@@ -1603,14 +1621,7 @@ class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, Wit
     
     public function columnFormats(): array
     {
-        return [
-            'B' => NumberFormat::FORMAT_NUMBER_00,
-            'C' => NumberFormat::FORMAT_NUMBER_00,
-            'D' => NumberFormat::FORMAT_NUMBER_00,
-            'E' => NumberFormat::FORMAT_NUMBER_00,
-            'F' => NumberFormat::FORMAT_NUMBER_00,
-            'G' => NumberFormat::FORMAT_NUMBER_00,
-        ];
+        return [];
     }
 
     public function styles(Worksheet $sheet): array
@@ -1675,6 +1686,9 @@ class StatisticsSheet implements FromCollection, ShouldAutoSize, WithStyles, Wit
         
         // Congelar primera fila
         $sheet->freezePane('A2');
+
+        // Resetear selección a A1
+        $sheet->setSelectedCells('A1');
 
         return [];
     }
