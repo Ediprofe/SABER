@@ -65,6 +65,9 @@ class ZipgradeReportGenerator
         // Dimension analysis by area (for charts)
         $dimensionChartData = $this->getDimensionChartData($exam);
 
+        // Question analysis data
+        $questionAnalysisData = $this->getQuestionAnalysisData($exam);
+
         // Prepare data for the view
         $reportData = [
             'exam' => $exam,
@@ -76,6 +79,7 @@ class ZipgradeReportGenerator
             'groupComparison' => $groupComparison,
             'piarComparison' => $piarComparison,
             'dimensionChartData' => $dimensionChartData,
+            'questionAnalysisData' => $questionAnalysisData,
             'generatedAt' => now()->format('Y-m-d H:i:s'),
         ];
 
@@ -555,5 +559,117 @@ class ZipgradeReportGenerator
         }
 
         return $result;
+    }
+
+    /**
+     * Obtiene datos de análisis por pregunta para la tabla HTML.
+     */
+    private function getQuestionAnalysisData(Exam $exam): array
+    {
+        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+
+        $questions = \App\Models\ExamQuestion::whereIn('exam_session_id', $sessionIds)
+            ->with(['session', 'tags', 'questionTags.tag'])
+            ->orderBy('exam_session_id')
+            ->orderBy('question_number')
+            ->get();
+
+        return $questions->map(function ($question) {
+            $session = $question->session;
+            $sessionNumber = $session?->session_number ?? 1;
+
+            // Determinar área y dimensiones desde tags
+            $area = $this->getAreaFromQuestion($question);
+            $dimension1 = $this->getDimension1FromQuestion($question, $area);
+            $dimension2 = $this->getDimension2FromQuestion($question, $area);
+            $dimension3 = $this->getDimension3FromQuestion($question, $area);
+
+            // Calcular % de acierto desde respuestas
+            $totalAnswers = $question->studentAnswers()->count();
+            $correctAnswers = $question->studentAnswers()->where('is_correct', true)->count();
+            $pctCorrect = $totalAnswers > 0 ? round(($correctAnswers / $totalAnswers) * 100, 2) : 0;
+
+            return [
+                'sesion' => $sessionNumber,
+                'numero' => $question->question_number,
+                'correcta' => $question->correct_answer ?? '—',
+                'area' => $area ?? '—',
+                'pct_acierto' => $pctCorrect,
+                'respuesta_1' => $question->response_1 ?? '—',
+                'pct_1' => $question->response_1_pct ?? 0,
+                'respuesta_2' => $question->response_2 ?? '—',
+                'pct_2' => $question->response_2_pct ?? 0,
+                'dim1' => $dimension1 ?? '—',
+                'dim2' => $dimension2 ?? '—',
+                'dim3' => $dimension3 ?? '—',
+            ];
+        })->toArray();
+    }
+
+    /**
+     * Obtiene el área de una pregunta.
+     */
+    private function getAreaFromQuestion($question): ?string
+    {
+        foreach ($question->tags as $tag) {
+            if ($tag->tag_type === 'area') {
+                $normalized = \App\Support\AreaConfig::normalizeAreaName($tag->tag_name);
+                return $normalized ? \App\Support\AreaConfig::getLabel($normalized) : $tag->tag_name;
+            }
+        }
+
+        foreach ($question->tags as $tag) {
+            if ($tag->parent_area) {
+                $normalized = \App\Support\AreaConfig::normalizeAreaName($tag->parent_area);
+                return $normalized ? \App\Support\AreaConfig::getLabel($normalized) : $tag->parent_area;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Obtiene la dimensión 1 de una pregunta.
+     */
+    private function getDimension1FromQuestion($question, ?string $area): ?string
+    {
+        if ($area === 'Inglés') {
+            $parte = $question->tags->firstWhere('tag_type', 'parte');
+            return $parte?->tag_name;
+        }
+
+        $competencia = $question->tags->firstWhere('tag_type', 'competencia');
+        return $competencia?->tag_name;
+    }
+
+    /**
+     * Obtiene la dimensión 2 de una pregunta.
+     */
+    private function getDimension2FromQuestion($question, ?string $area): ?string
+    {
+        if ($area === 'Inglés') {
+            return null;
+        }
+
+        if (in_array($area, ['Lectura', 'Lectura Crítica'])) {
+            $tipo = $question->tags->firstWhere('tag_type', 'tipo_texto');
+            return $tipo?->tag_name;
+        }
+
+        $componente = $question->tags->firstWhere('tag_type', 'componente');
+        return $componente?->tag_name;
+    }
+
+    /**
+     * Obtiene la dimensión 3 de una pregunta.
+     */
+    private function getDimension3FromQuestion($question, ?string $area): ?string
+    {
+        if (in_array($area, ['Lectura', 'Lectura Crítica'])) {
+            $nivel = $question->tags->firstWhere('tag_type', 'nivel_lectura');
+            return $nivel?->tag_name;
+        }
+
+        return null;
     }
 }

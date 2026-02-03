@@ -156,6 +156,32 @@
         .dimension-chart-canvas {
             height: 350px;
         }
+
+        /* Question Analysis Table */
+        tr.distractor-won {
+            background: #fef3c7 !important;
+        }
+        tr.distractor-won:hover {
+            background: #fde68a !important;
+        }
+
+        .distractor-highlight {
+            color: #dc2626;
+            font-weight: 700;
+        }
+
+        .badge-correct {
+            background: #dcfce7;
+            color: #166534;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        /* Acierto colors */
+        .acierto-alto { color: #059669; font-weight: 600; }
+        .acierto-medio { color: #d97706; font-weight: 600; }
+        .acierto-bajo { color: #dc2626; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -293,6 +319,18 @@
             </div>
         </div>
 
+        <!-- Distribución Global -->
+        @if(!empty($distributions['global']))
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Distribución de Puntajes Globales</h2>
+            </div>
+            <div class="chart-wrapper" style="height: 400px;">
+                <canvas id="chartDistribution"></canvas>
+            </div>
+        </div>
+        @endif
+
         <!-- Top Performers -->
         <div class="card">
             <div class="card-header">
@@ -340,25 +378,16 @@
                 </div>
                 @endif
                 
-                <!-- Promedios por grupo -->
+                <!-- Promedios por área (comparando grupos) -->
                 @if(!empty($groupComparison))
                 <div class="chart-container">
-                    <div class="chart-title">Promedios por Grupo (CON PIAR vs SIN PIAR)</div>
+                    <div class="chart-title">Promedios por Área - Comparativo entre Grupos</div>
                     <div class="group-charts-wrapper" id="groupChartsContainer">
                         <!-- Canvas generados dinámicamente -->
                     </div>
                 </div>
                 @endif
                 
-                <!-- Distribución global -->
-                @if(!empty($distributions['global']))
-                <div class="chart-container">
-                    <div class="chart-title">Distribución de Puntajes Globales</div>
-                    <div class="chart-wrapper" style="height: 400px;">
-                        <canvas id="chartDistribution"></canvas>
-                    </div>
-                </div>
-                @endif
             </div>
         </div>
 
@@ -370,6 +399,92 @@
             </div>
             <div class="dimension-charts-container" id="dimensionChartsContainer">
                 <!-- Los gráficos se generan dinámicamente con JavaScript -->
+            </div>
+        </div>
+        @endif
+
+        <!-- Question Analysis Section -->
+        @if(!empty($questionAnalysisData))
+        <div class="card" x-data="questionTable()">
+            <div class="card-header">
+                <h2 class="card-title">Análisis por Pregunta</h2>
+            </div>
+
+            <div class="controls no-print">
+                <div class="input-group">
+                    <label class="input-label">Filtrar por área</label>
+                    <select x-model="areaFilter" class="select">
+                        <option value="">Todas las áreas</option>
+                        <template x-for="area in uniqueAreas" :key="area">
+                            <option :value="area" x-text="area"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label class="input-label">Filtrar por sesión</label>
+                    <select x-model="sessionFilter" class="select">
+                        <option value="">Todas las sesiones</option>
+                        <template x-for="session in uniqueSessions" :key="session">
+                            <option :value="session" x-text="'Sesión ' + session"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <label class="toggle">
+                    <input type="checkbox" x-model="showOnlyDistractorWins" class="toggle-input">
+                    <span>Solo preguntas donde ganó el distractor</span>
+                </label>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="sortable" @click="sortBy('sesion')" :class="getSortClass('sesion')">Sesión</th>
+                            <th class="sortable" @click="sortBy('numero')" :class="getSortClass('numero')">#</th>
+                            <th>Correcta</th>
+                            <th class="sortable" @click="sortBy('area')" :class="getSortClass('area')">Área</th>
+                            <th class="sortable" @click="sortBy('pct_acierto')" :class="getSortClass('pct_acierto')">% Acierto</th>
+                            <th>1° Elegida</th>
+                            <th>1° %</th>
+                            <th>2° Elegida</th>
+                            <th>2° %</th>
+                            <th>Dim 1</th>
+                            <th>Dim 2</th>
+                            <th>Dim 3</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="question in filteredQuestions" :key="question.sesion + '-' + question.numero">
+                            <tr :class="{ 'distractor-won': question.respuesta_1 !== question.correcta && question.respuesta_1 !== '—' }">
+                                <td x-text="question.sesion"></td>
+                                <td x-text="question.numero"></td>
+                                <td><span class="badge badge-correct" x-text="question.correcta"></span></td>
+                                <td x-text="question.area"></td>
+                                <td :class="getAciertoClass(question.pct_acierto)">
+                                    <span x-text="question.pct_acierto.toFixed(1) + '%'"></span>
+                                </td>
+                                <td :class="{ 'distractor-highlight': question.respuesta_1 !== question.correcta && question.respuesta_1 !== '—' }">
+                                    <span x-text="question.respuesta_1"></span>
+                                </td>
+                                <td x-text="question.pct_1 ? question.pct_1.toFixed(1) + '%' : '—'"></td>
+                                <td x-text="question.respuesta_2"></td>
+                                <td x-text="question.pct_2 ? question.pct_2.toFixed(1) + '%' : '—'"></td>
+                                <td x-text="question.dim1"></td>
+                                <td x-text="question.dim2"></td>
+                                <td x-text="question.dim3"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div x-show="filteredQuestions.length === 0" style="text-align: center; padding: 40px; color: #6b7280;">
+                    No se encontraron preguntas con los filtros aplicados.
+                </div>
+            </div>
+
+            <div style="margin-top: 16px; padding: 12px; background: #fef3c7; border-radius: 8px; font-size: 13px;">
+                <strong>Nota:</strong> Las filas resaltadas en amarillo indican preguntas donde la respuesta más elegida NO es la correcta (el distractor "ganó").
             </div>
         </div>
         @endif
@@ -403,7 +518,8 @@
         "groupComparison": {!! json_encode($groupComparison) !!},
         "piarComparison": {!! json_encode($piarComparison) !!},
         "distributions": {!! json_encode($distributions) !!},
-        "dimensionChartData": {!! json_encode($dimensionChartData ?? []) !!}
+        "dimensionChartData": {!! json_encode($dimensionChartData ?? []) !!},
+        "questionAnalysisData": {!! json_encode($questionAnalysisData ?? []) !!}
     }
     </script>
 
@@ -489,6 +605,82 @@
                     if (score >= 80) return 'score-high';
                     if (score >= 60) return 'score-medium';
                     return 'score-low';
+                }
+            };
+        }
+
+        // Alpine.js Question Table Component
+        function questionTable() {
+            return {
+                questions: reportData.questionAnalysisData || [],
+                areaFilter: '',
+                sessionFilter: '',
+                showOnlyDistractorWins: false,
+                sortColumn: 'numero',
+                sortDirection: 'asc',
+
+                get uniqueAreas() {
+                    return [...new Set(this.questions.map(q => q.area))].filter(a => a !== '—').sort();
+                },
+
+                get uniqueSessions() {
+                    return [...new Set(this.questions.map(q => q.sesion))].sort();
+                },
+
+                get filteredQuestions() {
+                    let filtered = this.questions.filter(question => {
+                        // Area filter
+                        const matchesArea = !this.areaFilter || question.area === this.areaFilter;
+
+                        // Session filter
+                        const matchesSession = !this.sessionFilter || question.sesion == this.sessionFilter;
+
+                        // Distractor wins filter
+                        const distractorWon = question.respuesta_1 !== question.correcta && question.respuesta_1 !== '—';
+                        const matchesDistractor = !this.showOnlyDistractorWins || distractorWon;
+
+                        return matchesArea && matchesSession && matchesDistractor;
+                    });
+
+                    // Sort
+                    filtered.sort((a, b) => {
+                        let valA = a[this.sortColumn];
+                        let valB = b[this.sortColumn];
+
+                        if (valA === null || valA === '—') valA = this.sortDirection === 'asc' ? Infinity : -Infinity;
+                        if (valB === null || valB === '—') valB = this.sortDirection === 'asc' ? Infinity : -Infinity;
+
+                        if (typeof valA === 'string' && typeof valB === 'string') {
+                            valA = valA.toLowerCase();
+                            valB = valB.toLowerCase();
+                        }
+
+                        if (valA < valB) return this.sortDirection === 'asc' ? -1 : 1;
+                        if (valA > valB) return this.sortDirection === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+
+                    return filtered;
+                },
+
+                sortBy(column) {
+                    if (this.sortColumn === column) {
+                        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortColumn = column;
+                        this.sortDirection = 'asc';
+                    }
+                },
+
+                getSortClass(column) {
+                    if (this.sortColumn !== column) return 'sortable';
+                    return this.sortDirection === 'asc' ? 'sortable sort-asc' : 'sortable sort-desc';
+                },
+
+                getAciertoClass(pct) {
+                    if (pct >= 70) return 'acierto-alto';
+                    if (pct >= 40) return 'acierto-medio';
+                    return 'acierto-bajo';
                 }
             };
         }
@@ -692,67 +884,91 @@ ${r?'Expression: "'+r+`"
                 });
             }
             
-            // 3. Promedios por grupo
+            // 3. Promedios por Área (comparando grupos)
             const groupContainer = document.getElementById('groupChartsContainer');
             if (groupContainer && reportData.groupComparison) {
-                const groups = Object.keys(reportData.groupComparison);
-                
-                groups.forEach(groupKey => {
-                    const groupData = reportData.groupComparison[groupKey];
-                    
-                    if (!groupData) return;
-                    
+
+                const groups = Object.keys(reportData.groupComparison).sort();
+
+                // Colores por área
+                const areaChartColors = {
+                    'lectura': '#3b82f6',
+                    'matematicas': '#ef4444',
+                    'sociales': '#f59e0b',
+                    'naturales': '#10b981',
+                    'ingles': '#8b5cf6'
+                };
+
+                const areaLabels = {
+                    'lectura': 'Lectura Crítica',
+                    'matematicas': 'Matemáticas',
+                    'sociales': 'Ciencias Sociales',
+                    'naturales': 'Ciencias Naturales',
+                    'ingles': 'Inglés'
+                };
+
+                const conPiarColor = '#9ca3af';
+
+                // Crear un gráfico por cada área
+                const areasToChart = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'];
+
+                areasToChart.forEach(areaKey => {
                     // Crear wrapper y canvas
                     const wrapper = document.createElement('div');
                     wrapper.style.display = 'block';
                     wrapper.style.marginBottom = '40px';
                     wrapper.style.background = '#fff';
-                    wrapper.style.padding = '10px';
+                    wrapper.style.padding = '15px';
                     wrapper.style.borderRadius = '8px';
-                    
+                    wrapper.style.border = '1px solid #e2e8f0';
+
                     const title = document.createElement('h3');
-                    title.innerText = `Grupo ${groupKey}`;
+                    title.innerText = areaLabels[areaKey];
                     title.style.textAlign = 'center';
                     title.style.marginBottom = '15px';
-                    title.style.color = '#1f2937';
-                    title.style.fontSize = '16px';
-                    
+                    title.style.color = areaChartColors[areaKey];
+                    title.style.fontSize = '18px';
+                    title.style.fontWeight = '600';
+
                     const canvasContainer = document.createElement('div');
-                    canvasContainer.style.height = '250px';
+                    canvasContainer.style.height = '280px';
                     canvasContainer.style.position = 'relative';
-                    
+
                     const canvas = document.createElement('canvas');
-                    
+
                     canvasContainer.appendChild(canvas);
                     wrapper.appendChild(title);
                     wrapper.appendChild(canvasContainer);
                     groupContainer.appendChild(wrapper);
-                    
-                    // Preparar datos
-                    const piarData = allAreas.map(area => groupData[areaKeyMap[area]]?.piar || 0);
-                    const nonPiarData = allAreas.map(area => groupData[areaKeyMap[area]]?.non_piar || 0);
-                    
-                    // CON PIAR = gris, SIN PIAR = color del área
-                    const piarColors = '#9ca3af'; 
-                    const nonPiarColors = allAreas.map(area => areaColors[area]);
-                    
-                    const maxValue = Math.max(...piarData, ...nonPiarData) * 1.15;
-                    
+
+                    // Preparar datos: para cada grupo, obtener CON PIAR y SIN PIAR de esta área
+                    const conPiarData = groups.map(groupKey => {
+                        const groupData = reportData.groupComparison[groupKey];
+                        return groupData[areaKey]?.piar || 0;
+                    });
+
+                    const sinPiarData = groups.map(groupKey => {
+                        const groupData = reportData.groupComparison[groupKey];
+                        return groupData[areaKey]?.non_piar || 0;
+                    });
+
+                    const maxValue = Math.max(...conPiarData, ...sinPiarData) * 1.15;
+
                     new Chart(canvas, {
                         type: 'bar',
                         data: {
-                            labels: allAreas,
+                            labels: groups,
                             datasets: [
-                                { 
-                                    label: 'SIN PIAR', 
-                                    data: nonPiarData, 
-                                    backgroundColor: nonPiarColors,
+                                {
+                                    label: 'SIN PIAR',
+                                    data: sinPiarData,
+                                    backgroundColor: areaChartColors[areaKey],
                                     borderRadius: 6
                                 },
-                                { 
-                                    label: 'CON PIAR', 
-                                    data: piarData, 
-                                    backgroundColor: piarColors,
+                                {
+                                    label: 'CON PIAR',
+                                    data: conPiarData,
+                                    backgroundColor: conPiarColor,
                                     borderRadius: 6
                                 }
                             ]
@@ -769,7 +985,14 @@ ${r?'Expression: "'+r+`"
                                 }
                             },
                             scales: {
-                                y: { beginAtZero: true, max: Math.min(maxValue, 100) }
+                                y: {
+                                    beginAtZero: true,
+                                    max: Math.min(Math.ceil(maxValue), 100),
+                                    title: { display: true, text: 'Puntaje Promedio' }
+                                },
+                                x: {
+                                    title: { display: true, text: 'Grupo' }
+                                }
                             }
                         }
                     });
