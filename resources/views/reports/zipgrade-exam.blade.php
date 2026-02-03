@@ -5,110 +5,607 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Informe {{ $exam->name }} - Sistema SABER (Zipgrade)</title>
     <style>
-        /* Tailwind-like Utility Classes */
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6; color: #1f2937; line-height: 1.5; }
-        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-        
-        /* Header */
-        .header { background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
-        .header-subtitle { font-size: 16px; opacity: 0.9; }
-        .header-meta { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; font-size: 14px; }
-        .header-meta-item { display: flex; align-items: center; gap: 6px; }
-        
-        /* Cards */
-        .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
-        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .card-title { font-size: 20px; font-weight: 600; color: #1f2937; }
-        
-        /* KPI Grid */
-        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
-        .kpi-card { background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-left: 4px solid #3b82f6; padding: 20px; border-radius: 8px; }
-        .kpi-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-        .kpi-value { font-size: 32px; font-weight: 700; color: #1e40af; }
-        .kpi-value-small { font-size: 18px; color: #475569; }
-        
-        /* Controls */
-        .controls { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
-        .input-group { display: flex; flex-direction: column; gap: 4px; }
-        .input-label { font-size: 12px; font-weight: 600; color: #64748b; }
-        .input { padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; width: 250px; transition: border-color 0.2s; }
-        .input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-        .select { padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; }
-        .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 12px; background: #f3f4f6; border-radius: 6px; transition: background 0.2s; }
-        .toggle:hover { background: #e5e7eb; }
-        .toggle-input { width: 18px; height: 18px; accent-color: #3b82f6; }
-        
-        /* Tables */
-        .table-container { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th { background: #f8fafc; color: #475569; font-weight: 600; text-align: left; padding: 12px 16px; border-bottom: 2px solid #e2e8f0; white-space: nowrap; cursor: pointer; user-select: none; position: relative; }
-        th:hover { background: #f1f5f9; }
-        th.sortable::after { content: '↕'; margin-left: 8px; opacity: 0.4; font-size: 12px; }
-        th.sort-asc::after { content: '↑'; opacity: 1; color: #3b82f6; }
-        th.sort-desc::after { content: '↓'; opacity: 1; color: #3b82f6; }
-        td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }
-        tr:hover { background: #f8fafc; }
-        tr.piar { background: #fef3c7; }
-        tr.piar:hover { background: #fde68a; }
-        
-        /* Badges */
-        .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-        .badge-piar { background: #fbbf24; color: #92400e; }
-        .badge-normal { background: #e0e7ff; color: #3730a3; }
-        
-        /* Score colors */
-        .score-high { color: #059669; font-weight: 600; }
-        .score-medium { color: #d97706; font-weight: 600; }
-        .score-low { color: #dc2626; font-weight: 600; }
-        .score-null { color: #9ca3af; font-style: italic; }
-        
-        /* Charts */
-        .chart-grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
-        .chart-container { background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
-        .chart-title { font-size: 16px; font-weight: 600; color: #374151; margin-bottom: 16px; text-align: center; }
-        .chart-wrapper { position: relative; height: 300px; }
-        .group-charts-wrapper { display: flex; flex-direction: column; gap: 40px; }
-        
-        /* Top performers */
-        .top-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
-        .top-card { background: #f8fafc; border-radius: 8px; padding: 16px; border: 1px solid #e2e8f0; }
-        .top-title { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
-        .top-list { list-style: none; }
-        .top-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
-        .top-item:last-child { border-bottom: none; }
-        .top-rank { width: 24px; height: 24px; border-radius: 50%; background: #e0e7ff; color: #3730a3; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
-        .top-rank.gold { background: #fde047; color: #854d0e; }
-        .top-rank.silver { background: #e5e7eb; color: #374151; }
-        .top-rank.bronze { background: #fed7aa; color: #9a3412; }
-        .top-name { flex: 1; margin-left: 12px; font-size: 14px; }
-        .top-score { font-weight: 600; color: #1e40af; }
-        
-        /* Footer */
-        .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; margin-top: 40px; }
-        
-        /* Print styles */
-        @media print {
-            body { background: white; }
-            .card { box-shadow: none; border: 1px solid #e2e8f0; break-inside: avoid; }
-            .header { background: #1e40af; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .no-print { display: none !important; }
-        }
-        
-        /* Responsive */
-        @media (max-width: 768px) {
-            .container { padding: 12px; }
-            .header { padding: 20px; }
-            .header h1 { font-size: 22px; }
-            .controls { flex-direction: column; align-items: stretch; }
-            .input { width: 100%; }
-            .chart-grid { grid-template-columns: 1fr; }
-            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-            .group-charts-wrapper { grid-template-columns: 1fr; }
+        /* ===========================================
+           1. CSS Variables
+           =========================================== */
+        :root {
+            /* Primary */
+            --primary-50: #eff6ff;
+            --primary-100: #dbeafe;
+            --primary-200: #bfdbfe;
+            --primary-500: #3b82f6;
+            --primary-600: #2563eb;
+            --primary-700: #1d4ed8;
+            --primary-800: #1e40af;
+            --primary-900: #1e3a8a;
+
+            /* Neutrals */
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+
+            /* Status */
+            --success: #059669;
+            --warning: #d97706;
+            --danger: #dc2626;
+
+            /* Areas */
+            --area-lectura: #3b82f6;
+            --area-matematicas: #ef4444;
+            --area-sociales: #f59e0b;
+            --area-naturales: #10b981;
+            --area-ingles: #8b5cf6;
+
+            /* Spacing */
+            --space-xs: 4px;
+            --space-sm: 8px;
+            --space-md: 16px;
+            --space-lg: 24px;
+            --space-xl: 32px;
+            --space-2xl: 48px;
+
+            /* Shadows */
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+            /* Border radius */
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --radius-xl: 16px;
         }
 
-        /* Dimension Charts - Full Width Layout */
+        /* ===========================================
+           2. Base & Reset
+           =========================================== */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        html { scroll-behavior: smooth; }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; 
+            background-color: var(--gray-100); 
+            color: var(--gray-800); 
+            line-height: 1.6; 
+        }
+        
+        :focus-visible {
+            outline: 2px solid var(--primary-500);
+            outline-offset: 2px;
+        }
+
+        /* ===========================================
+           3. Layout
+           =========================================== */
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            padding: var(--space-lg); 
+        }
+
+        /* ===========================================
+           4. Header
+           =========================================== */
+        .header {
+            background: linear-gradient(135deg, var(--primary-800) 0%, var(--primary-600) 50%, var(--primary-500) 100%);
+            color: white;
+            padding: var(--space-xl) var(--space-xl);
+            border-radius: var(--radius-xl);
+            margin-bottom: var(--space-lg);
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 800;
+            margin-bottom: var(--space-sm);
+            letter-spacing: -0.5px;
+        }
+
+        .header-subtitle {
+            font-size: 14px;
+            opacity: 0.85;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .header-meta {
+            display: flex;
+            gap: var(--space-lg);
+            margin-top: var(--space-lg);
+            flex-wrap: wrap;
+            font-size: 13px;
+            padding-top: var(--space-md);
+            border-top: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .header-meta-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            background: rgba(255,255,255,0.1);
+            padding: var(--space-sm) var(--space-md);
+            border-radius: var(--radius-md);
+            backdrop-filter: blur(4px);
+        }
+
+        /* ===========================================
+           5. Navigation
+           =========================================== */
+        .section-nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: white;
+            padding: var(--space-sm) 0;
+            margin-bottom: var(--space-lg);
+            border-bottom: 1px solid var(--gray-200);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .nav-inner {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            overflow-x: auto;
+            padding: 0 var(--space-sm);
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .nav-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .nav-link {
+            padding: var(--space-sm) var(--space-md);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-600);
+            text-decoration: none;
+            border-radius: var(--radius-md);
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover {
+            background: var(--primary-50);
+            color: var(--primary-700);
+        }
+
+        .nav-link.active {
+            background: var(--primary-500);
+            color: white;
+        }
+
+        /* ===========================================
+           6. Cards
+           =========================================== */
+        .card {
+            background: white;
+            border-radius: var(--radius-xl);
+            margin-bottom: var(--space-lg);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--gray-100);
+            overflow: hidden;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--space-lg);
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-100);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s ease;
+        }
+
+        .card-header:hover {
+            background: var(--gray-100);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--gray-800);
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+        }
+
+        .card-toggle {
+            font-size: 12px;
+            color: var(--gray-500);
+            font-weight: 500;
+        }
+
+        .card-body {
+            padding: var(--space-lg);
+        }
+
+        /* ===========================================
+           7. KPIs
+           =========================================== */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: var(--space-md);
+        }
+
+        .kpi-card {
+            background: white;
+            border: 1px solid var(--gray-200);
+            padding: var(--space-lg);
+            border-radius: var(--radius-lg);
+            text-align: center;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+            border-color: var(--primary-200);
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-500), var(--primary-400));
+        }
+
+        .kpi-card:nth-child(2)::before { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+        .kpi-card:nth-child(3)::before { background: linear-gradient(90deg, #34d399, #10b981); }
+        .kpi-card:nth-child(4)::before { background: linear-gradient(90deg, #818cf8, #6366f1); }
+        .kpi-card:nth-child(5)::before { background: linear-gradient(90deg, #f472b6, #ec4899); }
+
+        .kpi-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: var(--space-sm);
+        }
+
+        .kpi-value {
+            font-size: 36px;
+            font-weight: 800;
+            color: var(--gray-800);
+            line-height: 1;
+        }
+
+        .kpi-value-small {
+            font-size: 14px;
+            color: var(--gray-500);
+            margin-top: var(--space-xs);
+        }
+
+        /* ===========================================
+           8. Controls
+           =========================================== */
+        .controls { 
+            display: flex; 
+            gap: var(--space-md); 
+            margin-bottom: var(--space-lg); 
+            flex-wrap: wrap; 
+            align-items: flex-end;
+        }
+        .input-group { display: flex; flex-direction: column; gap: var(--space-xs); }
+        .input-label { font-size: 11px; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.5px; }
+        .input { 
+            padding: 10px 14px; 
+            border: 1px solid var(--gray-300); 
+            border-radius: var(--radius-md); 
+            font-size: 14px; 
+            width: 260px; 
+            transition: all 0.2s ease;
+            background: white;
+        }
+        .input:focus { 
+            outline: none; 
+            border-color: var(--primary-500); 
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .select { 
+            padding: 10px 14px; 
+            border: 1px solid var(--gray-300); 
+            border-radius: var(--radius-md); 
+            font-size: 14px; 
+            background: white; 
+            cursor: pointer;
+            min-width: 180px;
+        }
+        .select:focus {
+            outline: none; 
+            border-color: var(--primary-500); 
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .toggle { 
+            display: flex; 
+            align-items: center; 
+            gap: var(--space-sm); 
+            cursor: pointer; 
+            padding: 10px var(--space-md); 
+            background: var(--gray-100); 
+            border-radius: var(--radius-md); 
+            transition: all 0.2s ease;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-600);
+        }
+        .toggle:hover { 
+            background: var(--gray-200);
+        }
+        .toggle-input { 
+            width: 18px; 
+            height: 18px; 
+            accent-color: var(--primary-500);
+        }
+
+        /* ===========================================
+           9. Tables
+           =========================================== */
+        .table-container {
+            overflow-x: auto;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--gray-200);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        thead {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        th {
+            background: var(--gray-800);
+            color: white;
+            font-weight: 600;
+            text-align: left;
+            padding: var(--space-md);
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        th:hover {
+            background: var(--gray-700);
+        }
+
+        th.sortable::after {
+            content: '↕';
+            margin-left: var(--space-sm);
+            opacity: 0.5;
+            font-size: 10px;
+        }
+
+        th.sort-asc::after {
+            content: '↑';
+            opacity: 1;
+        }
+
+        th.sort-desc::after {
+            content: '↓';
+            opacity: 1;
+        }
+
+        td {
+            padding: var(--space-md);
+            border-bottom: 1px solid var(--gray-100);
+            vertical-align: middle;
+        }
+
+        tbody tr {
+            transition: background 0.15s ease;
+        }
+
+        tbody tr:hover {
+            background: var(--primary-50);
+        }
+
+        tbody tr.piar {
+            background: #fffbeb;
+        }
+
+        tbody tr.piar:hover {
+            background: #fef3c7;
+        }
+
+        tbody tr:nth-child(even) {
+            background: var(--gray-50);
+        }
+
+        tbody tr:nth-child(even):hover {
+            background: var(--primary-50);
+        }
+
+        /* ===========================================
+           10. Badges
+           =========================================== */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .badge-piar {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: white;
+            box-shadow: 0 2px 4px rgba(251, 191, 36, 0.3);
+        }
+
+        .badge-normal {
+            background: var(--gray-100);
+            color: var(--gray-600);
+        }
+
+        .badge-correct {
+            background: linear-gradient(135deg, #34d399, #10b981);
+            color: white;
+            min-width: 28px;
+        }
+
+        /* ===========================================
+           11. Score Colors
+           =========================================== */
+        .score-high { color: var(--success); font-weight: 600; }
+        .score-medium { color: var(--warning); font-weight: 600; }
+        .score-low { color: var(--danger); font-weight: 600; }
+        .score-null { color: var(--gray-400); font-style: italic; }
+
+        /* ===========================================
+           12. Charts
+           =========================================== */
+        .chart-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-lg); }
+        .chart-container { background: white; padding: var(--space-lg); border-radius: var(--radius-lg); border: 1px solid var(--gray-200); }
+        .chart-title { font-size: 16px; font-weight: 600; color: var(--gray-700); margin-bottom: var(--space-md); text-align: center; }
+        .chart-wrapper { position: relative; height: 300px; }
+        .group-charts-wrapper { display: flex; flex-direction: column; gap: 40px; }
+
+        /* ===========================================
+           13. Top Performers
+           =========================================== */
+        .top-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: var(--space-md);
+        }
+
+        .top-card {
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg);
+            border: 1px solid var(--gray-200);
+            transition: all 0.2s ease;
+        }
+
+        .top-card:hover {
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        .top-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--gray-600);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: var(--space-md);
+            padding-bottom: var(--space-sm);
+            border-bottom: 2px solid var(--primary-500);
+        }
+
+        .top-list {
+            list-style: none;
+        }
+
+        .top-item {
+            display: flex;
+            align-items: center;
+            padding: var(--space-sm) 0;
+            gap: var(--space-sm);
+        }
+
+        .top-item:not(:last-child) {
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .top-rank {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .top-rank.gold {
+            background: linear-gradient(135deg, #fde047, #facc15);
+            color: #854d0e;
+            box-shadow: 0 2px 4px rgba(250, 204, 21, 0.4);
+        }
+
+        .top-rank.silver {
+            background: linear-gradient(135deg, #e5e7eb, #d1d5db);
+            color: var(--gray-700);
+        }
+
+        .top-rank.bronze {
+            background: linear-gradient(135deg, #fed7aa, #fdba74);
+            color: #9a3412;
+        }
+
+        .top-name {
+            flex: 1;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-700);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .top-score {
+            font-weight: 700;
+            color: var(--primary-700);
+            font-size: 14px;
+        }
+
+        /* ===========================================
+           14. Dimension Charts
+           =========================================== */
         .dimension-charts-container {
             display: flex;
             flex-direction: column;
@@ -116,19 +613,19 @@
         }
 
         .area-section {
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 24px;
-            background: #fafafa;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg);
+            background: var(--gray-50);
         }
 
         .area-section-title {
             font-size: 22px;
             font-weight: 700;
-            color: #1e40af;
-            margin-bottom: 24px;
-            padding-bottom: 12px;
-            border-bottom: 3px solid #3b82f6;
+            color: var(--primary-800);
+            margin-bottom: var(--space-lg);
+            padding-bottom: var(--space-sm);
+            border-bottom: 3px solid var(--primary-500);
         }
 
         .dimension-list {
@@ -139,17 +636,17 @@
 
         .dimension-chart-wrapper {
             background: white;
-            border-radius: 8px;
-            padding: 24px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: var(--radius-md);
+            padding: var(--space-lg);
+            box-shadow: var(--shadow-sm);
             width: 100%;
         }
 
         .dimension-chart-title {
             font-size: 16px;
             font-weight: 600;
-            color: #374151;
-            margin-bottom: 16px;
+            color: var(--gray-700);
+            margin-bottom: var(--space-md);
             text-align: center;
         }
 
@@ -157,7 +654,9 @@
             height: 350px;
         }
 
-        /* Question Analysis Table */
+        /* ===========================================
+           15. Question Analysis
+           =========================================== */
         tr.distractor-won {
             background: #fef3c7 !important;
         }
@@ -166,22 +665,71 @@
         }
 
         .distractor-highlight {
-            color: #dc2626;
+            color: var(--danger);
             font-weight: 700;
         }
 
-        .badge-correct {
-            background: #dcfce7;
-            color: #166534;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-weight: 600;
+        .acierto-alto { color: var(--success); font-weight: 600; }
+        .acierto-medio { color: var(--warning); font-weight: 600; }
+        .acierto-bajo { color: var(--danger); font-weight: 600; }
+
+        /* ===========================================
+           16. Footer
+           =========================================== */
+        .footer {
+            text-align: center;
+            padding: var(--space-xl);
+            color: var(--gray-500);
+            font-size: 12px;
+            margin-top: var(--space-2xl);
+            background: var(--gray-50);
+            border-top: 1px solid var(--gray-200);
+            border-radius: var(--radius-lg) var(--radius-lg) 0 0;
         }
 
-        /* Acierto colors */
-        .acierto-alto { color: #059669; font-weight: 600; }
-        .acierto-medio { color: #d97706; font-weight: 600; }
-        .acierto-bajo { color: #dc2626; font-weight: 600; }
+        .footer p {
+            margin-bottom: var(--space-xs);
+        }
+
+        /* ===========================================
+           17. Print Styles
+           =========================================== */
+        @media print {
+            body { background: white; }
+            .card { box-shadow: none; border: 1px solid var(--gray-200); break-inside: avoid; }
+            .header { 
+                background: var(--primary-800); 
+                -webkit-print-color-adjust: exact; 
+                print-color-adjust: exact; 
+            }
+            .no-print { display: none !important; }
+            .section-nav { display: none !important; }
+            .kpi-card::before { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+
+        /* ===========================================
+           18. Responsive
+           =========================================== */
+        @media (max-width: 1024px) {
+            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        @media (max-width: 768px) {
+            .container { padding: var(--space-md); }
+            .header { padding: var(--space-lg); }
+            .header h1 { font-size: 24px; }
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .controls { flex-direction: column; align-items: stretch; }
+            .input { width: 100%; }
+            .chart-grid { grid-template-columns: 1fr; }
+            .group-charts-wrapper { grid-template-columns: 1fr; }
+            .nav-inner { padding: 0 var(--space-sm); }
+        }
+
+        @media (max-width: 640px) {
+            .kpi-grid { grid-template-columns: 1fr; }
+            .header h1 { font-size: 20px; }
+        }
     </style>
 </head>
 <body>
@@ -208,11 +756,30 @@
             </div>
         </div>
 
-        <!-- KPIs Section -->
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Indicadores Principales</h2>
+        <!-- Navigation Index -->
+        <nav class="section-nav no-print" id="sectionNav">
+            <div class="nav-inner">
+                <span class="nav-label">Ir a:</span>
+                <a href="#kpis" class="nav-link">KPIs</a>
+                <a href="#estudiantes" class="nav-link">Estudiantes</a>
+                <a href="#distribucion" class="nav-link">Distribución</a>
+                <a href="#top5" class="nav-link">Top 5</a>
+                <a href="#graficos" class="nav-link">Gráficos</a>
+                <a href="#dimensiones" class="nav-link">Dimensiones</a>
+                <a href="#preguntas" class="nav-link">Preguntas</a>
             </div>
+        </nav>
+
+        <!-- KPIs Section -->
+        <div class="card" id="kpis">
+            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
+                <h2 class="card-title">
+                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
+                    Indicadores Principales
+                </h2>
+                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
+            </div>
+            <div class="card-body" x-show="!collapsed" x-transition>
             <div class="kpi-grid">
                 <div class="kpi-card">
                     <div class="kpi-label">Total Estudiantes</div>
@@ -237,10 +804,11 @@
                     <div class="kpi-value">{{ number_format($statistics->globalStdDev, 1) }}</div>
                 </div>
             </div>
+            </div>
         </div>
 
         <!-- Student List Section -->
-        <div class="card" x-data="studentTable()">
+        <div class="card" id="estudiantes" x-data="studentTable()">
             <div class="card-header" @click="expanded = !expanded" style="cursor: pointer; user-select: none;">
                 <h2 class="card-title">
                     <span x-text="expanded ? '▼' : '▶'" style="display: inline-block; width: 24px; color: #3b82f6;"></span>
@@ -249,7 +817,7 @@
                 <span x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'" style="font-size: 12px; color: #6b7280;"></span>
             </div>
             
-            <div x-show="expanded" x-transition style="overflow: hidden;">
+            <div class="card-body" x-show="expanded" x-transition>
             <div class="controls no-print">
                 <div class="input-group">
                     <label class="input-label">Buscar estudiante</label>
@@ -314,7 +882,7 @@
                         </template>
                     </tbody>
                 </table>
-                <div x-show="filteredStudents.length === 0" style="text-align: center; padding: 40px; color: #6b7280;">
+                <div x-show="filteredStudents.length === 0" style="text-align: center; padding: 40px; color: var(--gray-500);">
                     No se encontraron estudiantes con los filtros aplicados.
                 </div>
             </div>
@@ -323,21 +891,32 @@
 
         <!-- Distribución Global -->
         @if(!empty($distributions['global']))
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Distribución de Puntajes Globales</h2>
+        <div class="card" id="distribucion">
+            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
+                <h2 class="card-title">
+                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
+                    Distribución de Puntajes Globales
+                </h2>
+                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
             </div>
+            <div class="card-body" x-show="!collapsed" x-transition>
             <div class="chart-wrapper" style="height: 400px;">
                 <canvas id="chartDistribution"></canvas>
+            </div>
             </div>
         </div>
         @endif
 
         <!-- Top Performers -->
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Top 5 por Área</h2>
+        <div class="card" id="top5">
+            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
+                <h2 class="card-title">
+                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
+                    Top 5 por Área
+                </h2>
+                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
             </div>
+            <div class="card-body" x-show="!collapsed" x-transition>
             <div class="top-grid">
                 @foreach($topPerformers as $area => $performers)
                 <div class="top-card">
@@ -354,13 +933,19 @@
                 </div>
                 @endforeach
             </div>
+            </div>
         </div>
 
         <!-- Charts Section -->
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Gráficos y Visualizaciones</h2>
+        <div class="card" id="graficos">
+            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
+                <h2 class="card-title">
+                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
+                    Gráficos y Visualizaciones
+                </h2>
+                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
             </div>
+            <div class="card-body" x-show="!collapsed" x-transition>
             <div class="chart-grid">
                 <!-- Promedios por área (CON PIAR vs SIN PIAR) -->
                 @if(isset($piarComparison['piar']) && isset($piarComparison['non_piar']))
@@ -395,28 +980,34 @@
 
         <!-- Dimension Analysis Section -->
         @if(!empty($dimensionChartData))
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Análisis por Competencias y Componentes</h2>
+        <div class="card" id="dimensiones">
+            <div class="card-header" @click="collapsed = !collapsed" x-data="{ collapsed: false }">
+                <h2 class="card-title">
+                    <span x-text="collapsed ? '▶' : '▼'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
+                    Análisis por Competencias y Componentes
+                </h2>
+                <span class="card-toggle" x-text="collapsed ? 'Clic para expandir' : 'Clic para contraer'"></span>
             </div>
+            <div class="card-body" x-show="!collapsed" x-transition>
             <div class="dimension-charts-container" id="dimensionChartsContainer">
                 <!-- Los gráficos se generan dinámicamente con JavaScript -->
+            </div>
             </div>
         </div>
         @endif
 
         <!-- Question Analysis Section -->
         @if(!empty($questionAnalysisData))
-        <div class="card" x-data="questionTable()">
-            <div class="card-header" @click="expanded = !expanded" style="cursor: pointer; user-select: none;">
+        <div class="card" id="preguntas" x-data="questionTable()">
+            <div class="card-header" @click="expanded = !expanded">
                 <h2 class="card-title">
-                    <span x-text="expanded ? '▼' : '▶'" style="display: inline-block; width: 24px; color: #3b82f6;"></span>
+                    <span x-text="expanded ? '▼' : '▶'" style="display: inline-block; width: 20px; color: var(--primary-500); font-size: 12px;"></span>
                     Análisis por Pregunta
                 </h2>
-                <span x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'" style="font-size: 12px; color: #6b7280;"></span>
+                <span class="card-toggle" x-text="expanded ? 'Clic para contraer' : 'Clic para expandir'"></span>
             </div>
 
-            <div x-show="expanded" x-transition style="overflow: hidden;">
+            <div class="card-body" x-show="expanded" x-transition>
             <div class="controls no-print">
                 <div class="input-group">
                     <label class="input-label">Filtrar por área</label>
@@ -490,7 +1081,7 @@
                 </div>
             </div>
 
-            <div style="margin-top: 16px; padding: 12px; background: #fef3c7; border-radius: 8px; font-size: 13px;">
+            <div style="margin-top: var(--space-md); padding: var(--space-md); background: #fef3c7; border-radius: var(--radius-md); font-size: 13px;">
                 <strong>Nota:</strong> Las filas resaltadas en amarillo indican preguntas donde la respuesta más elegida NO es la correcta (el distractor "ganó").
             </div>
             </div>
