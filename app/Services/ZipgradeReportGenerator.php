@@ -205,15 +205,36 @@ class ZipgradeReportGenerator
     }
 
     /**
-     * Obtiene los top performers para un área específica.
+     * Obtiene los top performers para un área específica, con ranking que considera empates.
      */
     private function getTopPerformers(Collection $results, string $area, int $limit): Collection
     {
         $sorted = $results->sortByDesc(function ($result) use ($area) {
             return $area === 'global' ? $result->global_score : $result->{$area};
-        });
+        })->take($limit)->values();
 
-        return $sorted->take($limit)->values();
+        // Calcular ranking con empates
+        $rank = 1;
+        $previousScore = null;
+
+        return $sorted->map(function ($result, $index) use ($area, &$rank, &$previousScore) {
+            $currentScore = $area === 'global' ? $result->global_score : $result->{$area};
+
+            if ($previousScore !== null && $currentScore < $previousScore) {
+                // Puntaje diferente (menor), avanzar el rank
+                $rank = $index + 1; // El rank salta a la posición real
+            }
+            // Si es igual al anterior, mantiene el mismo rank
+
+            $previousScore = $currentScore;
+
+            // IMPORTANTE: Clonar el objeto para evitar que el rank de un área 
+            // sobrescriba el de otra si el estudiante aparece en varios tops.
+            $newResult = clone $result;
+            $newResult->rank = $rank;
+
+            return $newResult;
+        });
     }
 
     /**

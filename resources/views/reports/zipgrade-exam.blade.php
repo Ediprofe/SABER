@@ -1146,9 +1146,18 @@
                     </div>
                     <ul class="top-list">
                         @foreach($performers as $index => $performer)
-                        <li class="top-item {{ $index === 0 ? 'is-first' : '' }}">
-                            <span class="top-rank {{ $index === 0 ? 'gold' : ($index === 1 ? 'silver' : ($index === 2 ? 'bronze' : 'other')) }}">
-                                {{ $index + 1 }}
+                        @php
+                            $rank = $performer->rank ?? ($index + 1);
+                            $rankClass = match($rank) {
+                                1 => 'gold',
+                                2 => 'silver',
+                                3 => 'bronze',
+                                default => 'other'
+                            };
+                        @endphp
+                        <li class="top-item {{ $rank === 1 ? 'is-first' : '' }}">
+                            <span class="top-rank {{ $rankClass }}">
+                                {{ $rank }}
                             </span>
                             <div class="top-info">
                                 <span class="top-name">{{ $performer->student->first_name ?? 'N/A' }} {{ $performer->student->last_name ?? '' }}</span>
