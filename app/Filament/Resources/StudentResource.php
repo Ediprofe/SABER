@@ -3,7 +3,10 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\StudentResource\Pages;
+use App\Imports\StudentEmailsImport;
 use App\Imports\StudentsImport;
+use App\Models\AcademicYear;
+use App\Models\Enrollment;
 use App\Models\Student;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -12,6 +15,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Maatwebsite\Excel\Facades\Excel;
+use Filament\Tables\Actions\Action;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
@@ -31,19 +36,85 @@ class StudentResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('code')
-                    ->label('Código')
-                    ->disabled()
-                    ->dehydrated(false)
-                    ->helperText('El código se genera automáticamente al crear el estudiante'),
-                Forms\Components\TextInput::make('first_name')
-                    ->label('Nombre')
-                    ->required()
-                    ->maxLength(100),
-                Forms\Components\TextInput::make('last_name')
-                    ->label('Apellido')
-                    ->required()
-                    ->maxLength(100),
+                Forms\Components\Section::make('Datos del Estudiante')
+                    ->schema([
+                        Forms\Components\TextInput::make('document_id')
+                            ->label('Documento de Identidad')
+                            ->required()
+                            ->maxLength(20)
+                            ->unique(ignoreRecord: true)
+                            ->helperText('Este será también el código del estudiante')
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(fn (Forms\Set $set, ?string $state) => $set('code', $state)),
+
+                        Forms\Components\TextInput::make('code')
+                            ->label('Código')
+                            ->disabled()
+                            ->dehydrated(true)
+                            ->helperText('Se genera automáticamente del documento'),
+
+                        Forms\Components\TextInput::make('first_name')
+                            ->label('Nombre')
+                            ->required()
+                            ->maxLength(100),
+
+                        Forms\Components\TextInput::make('last_name')
+                            ->label('Apellido')
+                            ->required()
+                            ->maxLength(100),
+
+                        Forms\Components\TextInput::make('zipgrade_id')
+                            ->label('ZipgradeID')
+                            ->maxLength(20)
+                            ->helperText('ID interno de Zipgrade (opcional)'),
+
+                        Forms\Components\TextInput::make('email')
+                            ->label('Email')
+                            ->email()
+                            ->maxLength(150),
+                    ])
+                    ->columns(2),
+
+                Forms\Components\Section::make('Matrícula')
+                    ->schema([
+                        Forms\Components\Select::make('enrollment_year')
+                            ->label('Año Académico')
+                            ->options(fn () => AcademicYear::pluck('year', 'id'))
+                            ->default(fn () => AcademicYear::where('year', date('Y'))->first()?->id)
+                            ->required()
+                            ->helperText('Seleccione el año académico'),
+
+                        Forms\Components\Select::make('enrollment_grade')
+                            ->label('Grado')
+                            ->options([
+                                10 => '10°',
+                                11 => '11°',
+                            ])
+                            ->default(11)
+                            ->required(),
+
+                        Forms\Components\TextInput::make('enrollment_group')
+                            ->label('Grupo')
+                            ->required()
+                            ->placeholder('Ej: 1, 2, 3')
+                            ->maxLength(10),
+
+                        Forms\Components\Toggle::make('enrollment_is_piar')
+                            ->label('¿Es estudiante PIAR?')
+                            ->default(false)
+                            ->inline(false),
+
+                        Forms\Components\Select::make('enrollment_status')
+                            ->label('Estado')
+                            ->options([
+                                'ACTIVE' => 'Activo',
+                                'INACTIVE' => 'Inactivo',
+                            ])
+                            ->default('ACTIVE')
+                            ->required(),
+                    ])
+                    ->columns(3)
+                    ->visibleOn('create'),  // Solo visible al crear, no al editar
             ]);
     }
 
@@ -61,6 +132,10 @@ class StudentResource extends Resource
                     ->searchable(),
                 Tables\Columns\TextColumn::make('last_name')
                     ->label('Apellido')
+                    ->sortable()
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('email')
+                    ->label('Email')
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('full_name')
@@ -104,6 +179,7 @@ class StudentResource extends Resource
                             'Apellido',
                             'Documento',
                             'ZipgradeID',
+                            'Email',
                             'Año',
                             'Grado',
                             'Grupo',
@@ -119,13 +195,13 @@ class StudentResource extends Resource
                         }
 
                         // Style headers (bold)
-                        $sheet->getStyle('A1:I1')->getFont()->setBold(true);
+                        $sheet->getStyle('A1:J1')->getFont()->setBold(true);
 
                         // Example data (in the same order as headers)
                         // ZipgradeID = ID interno que asigna Zipgrade a cada estudiante
                         $exampleData = [
-                            ['SALOMÉ', 'ACEVEDO OCAMPO', '1234567890', '1', 2026, 11, '1', 'NO', 'ACTIVE'],
-                            ['JUAN', 'PÉREZ GÓMEZ', '1098765432', '2', 2026, 11, '2', 'SI', 'ACTIVE'],
+                            ['SALOMÉ', 'ACEVEDO OCAMPO', '1234567890', '1', 'salome@ejemplo.com', 2026, 11, '1', 'NO', 'ACTIVE'],
+                            ['JUAN', 'PÉREZ GÓMEZ', '1098765432', '2', 'juan@ejemplo.com', 2026, 11, '2', 'SI', 'ACTIVE'],
                         ];
 
                         // Add data rows
@@ -140,7 +216,7 @@ class StudentResource extends Resource
                         }
 
                         // Auto-size columns
-                        foreach (range('A', 'I') as $col) {
+                        foreach (range('A', 'J') as $col) {
                             $sheet->getColumnDimension($col)->setAutoSize(true);
                         }
 
@@ -225,12 +301,23 @@ class StudentResource extends Resource
                                             }
                                         }
 
+                                        // Detectar Email (columna E o buscar)
+                                        $emailValue = '';
+                                        foreach ($headers as $col => $header) {
+                                            $headerUpper = strtoupper(trim($header));
+                                            if (strpos($headerUpper, 'EMAIL') !== false || strpos($headerUpper, 'CORREO') !== false) {
+                                                $emailValue = trim($row[$col] ?? '');
+                                                break;
+                                            }
+                                        }
+
                                         $preview[] = [
                                             'row' => $rowNum,
                                             'nombre' => $row['A'] ?? '',
                                             'apellido' => $row['B'] ?? '',
                                             'documento' => $row['C'] ?? '',
                                             'zipgrade_id' => $zipgradeId ?: '—',
+                                            'email' => $emailValue ?: '—',
                                             'piar_raw' => $piarValue,
                                             'piar_detected' => strtoupper(trim($piarValue)) === 'SI' ? '✅ SI (PIAR)' : '❌ NO (No PIAR)',
                                         ];
@@ -259,10 +346,11 @@ class StudentResource extends Resource
                                         Forms\Components\TextInput::make('apellido')->label('Apellido')->disabled(),
                                         Forms\Components\TextInput::make('documento')->label('Documento')->disabled(),
                                         Forms\Components\TextInput::make('zipgrade_id')->label('ZipgradeID')->disabled(),
+                                        Forms\Components\TextInput::make('email')->label('Email')->disabled(),
                                         Forms\Components\TextInput::make('piar_raw')->label('PIAR (original)')->disabled(),
                                         Forms\Components\TextInput::make('piar_detected')->label('PIAR (detectado)')->disabled(),
                                     ])
-                                    ->columns(7)
+                                    ->columns(8)
                                     ->addable(false)
                                     ->deletable(false)
                                     ->reorderable(false),
@@ -290,6 +378,44 @@ class StudentResource extends Resource
                                 ->body($e->getMessage())
                                 ->danger()
                                 ->persistent()
+                                ->send();
+                        }
+                    }),
+                Tables\Actions\Action::make('import_emails')
+                    ->label('Importar Emails')
+                    ->icon('heroicon-o-envelope')
+                    ->color('info')
+                    ->form([
+                        Forms\Components\FileUpload::make('file')
+                            ->label('Archivo Excel')
+                            ->acceptedFileTypes([
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'application/vnd.ms-excel',
+                                'text/csv',
+                            ])
+                            ->required()
+                            ->disk('local')
+                            ->directory('temp-imports')
+                            ->visibility('private'),
+                    ])
+                    ->action(function (array $data) {
+                        $import = new StudentEmailsImport();
+                        Excel::import($import, $data['file'], 'local');
+
+                        // Limpiar archivo temporal
+                        Storage::disk('local')->delete($data['file']);
+
+                        if (!empty($import->errors)) {
+                            Notification::make()
+                                ->title('Importación con advertencias')
+                                ->body("Actualizados: {$import->updated}. No encontrados: {$import->notFound}. Errores: " . count($import->errors))
+                                ->warning()
+                                ->send();
+                        } else {
+                            Notification::make()
+                                ->title('Emails importados')
+                                ->body("Se actualizaron {$import->updated} estudiantes.")
+                                ->success()
                                 ->send();
                         }
                     }),

@@ -10,7 +10,14 @@ class Student extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['code', 'document_id', 'zipgrade_id', 'first_name', 'last_name'];
+    protected $fillable = [
+        'code',
+        'document_id',
+        'zipgrade_id',
+        'email',
+        'first_name',
+        'last_name',
+    ];
 
     public function enrollments(): HasMany
     {

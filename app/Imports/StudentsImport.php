@@ -47,6 +47,14 @@ class StudentsImport implements ToCollection, WithHeadingRow
                 // Para PIAR, buscar específicamente la columna que contiene 'PIAR'
                 $isPiar = $this->getPiarValue($row);
 
+                $email = $this->getValueFromRow($row, ['email', 'correo', 'e-mail', 'correo electronico', 'correo_electronico']);
+
+                // Validar formato de email si existe
+                if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $this->errors[] = "Fila {$rowNum}: El formato del email '{$email}' no es válido.";
+                    continue;
+                }
+
                 $status = $this->getValueFromRow($row, ['estado', 'status', 'Estado']) ?? 'ACTIVE';
 
                 Log::info("Row {$rowNum}: {$firstName} {$lastName} - PIAR='{$isPiar}'");
@@ -110,6 +118,7 @@ class StudentsImport implements ToCollection, WithHeadingRow
                         'code' => $code,
                         'first_name' => $firstName,
                         'last_name' => $lastName,
+                        'email' => $email,
                     ];
 
                     if (! empty($documentId)) {
@@ -128,6 +137,9 @@ class StudentsImport implements ToCollection, WithHeadingRow
                     }
                     if (! empty($zipgradeId) && empty($student->zipgrade_id)) {
                         $student->zipgrade_id = $zipgradeId;
+                    }
+                    if (! empty($email) && empty($student->email)) {
+                        $student->email = $email;
                     }
                     if ($student->isDirty()) {
                         $student->save();
@@ -207,6 +219,8 @@ class StudentsImport implements ToCollection, WithHeadingRow
             } elseif (strpos($header, 'PIAR') !== false) {
                 $this->columnMap['piar'] = $key;
                 Log::info("Columna PIAR detectada: key='{$key}', header='{$value}'");
+            } elseif (strpos($header, 'EMAIL') !== false || strpos($header, 'CORREO') !== false || strpos($header, 'E-MAIL') !== false) {
+                $this->columnMap['email'] = $key;
             } elseif (strpos($header, 'ESTADO') !== false || strpos($header, 'STATUS') !== false) {
                 $this->columnMap['estado'] = $key;
             }

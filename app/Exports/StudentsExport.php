@@ -27,6 +27,7 @@ class StudentsExport implements FromCollection, WithHeadings
             'code' => $student->code,
             'document_id' => $student->document_id,
             'zipgrade_id' => $student->zipgrade_id,
+            'email' => $student->email,
             'first_name' => $student->first_name,
             'last_name' => $student->last_name,
         ]);
@@ -35,11 +36,12 @@ class StudentsExport implements FromCollection, WithHeadings
     public function headings(): array
     {
         return [
-            'code',
-            'document_id',
-            'zipgrade_id',
-            'first_name',
-            'last_name',
+            'Código',
+            'Documento',
+            'ZipgradeID',
+            'Email',
+            'Nombre',
+            'Apellido',
         ];
     }
 }
