@@ -19,6 +19,10 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Jobs\GenerateStudentReportsJob;
+use App\Models\ReportGeneration;
+use Filament\Notifications\Notification;
+
 
 class ZipgradeResults extends Page implements HasTable
 {
@@ -203,6 +207,140 @@ class ZipgradeResults extends Page implements HasTable
                     }, $filename, [
                         'Content-Type' => 'text/html; charset=utf-8',
                     ]);
+                }),
+
+            Action::make('generate_individual_reports')
+                ->label('Generar Informes Individuales (PDF)')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('success')
+                ->requiresConfirmation()
+                ->modalHeading('Generar Informes PDF Individuales')
+                ->modalDescription(function () {
+                    $exam = $this->record;
+                    $count = app(ZipgradeMetricsService::class)->getEnrollmentsForExam($exam)->count();
+                    return "Se generará un PDF individual por cada uno de los {$count} estudiantes. El proceso se ejecutará en segundo plano y podrás descargar el ZIP cuando esté listo.";
+                })
+                ->modalSubmitActionLabel('Iniciar Generación')
+                ->action(function () {
+                    $exam = $this->record;
+                    $enrollments = app(ZipgradeMetricsService::class)->getEnrollmentsForExam($exam);
+
+                    // Verificar si ya hay una generación en proceso
+                    $existingGeneration = ReportGeneration::where('exam_id', $exam->id)
+                        ->where('type', 'individual_pdfs')
+                        ->whereIn('status', ['pending', 'processing'])
+                        ->first();
+
+                    if ($existingGeneration) {
+                        Notification::make()
+                            ->title('Generación en proceso')
+                            ->body('Ya hay una generación de informes en curso. Por favor espera a que termine.')
+                            ->warning()
+                            ->send();
+                        return;
+                    }
+
+                    // Crear registro de generación
+                    $generation = ReportGeneration::create([
+                        'exam_id' => $exam->id,
+                        'type' => 'individual_pdfs',
+                        'status' => 'pending',
+                        'total_students' => $enrollments->count(),
+                    ]);
+
+                    // Despachar job
+                    GenerateStudentReportsJob::dispatch($generation);
+
+                    Notification::make()
+                        ->title('Generación iniciada')
+                        ->body("Se están generando {$enrollments->count()} informes individuales. Actualiza la página para ver el progreso.")
+                        ->success()
+                        ->send();
+                }),
+
+            Action::make('download_individual_reports')
+                ->label(function () {
+                    $exam = $this->record;
+                    $generation = ReportGeneration::where('exam_id', $exam->id)
+                        ->where('type', 'individual_pdfs')
+                        ->latest()
+                        ->first();
+
+                    if (!$generation) {
+                        return 'Descargar ZIP (no disponible)';
+                    }
+
+                    if ($generation->status === 'processing') {
+                        return "Generando... ({$generation->progress_percent}%)";
+                    }
+
+                    if ($generation->status === 'completed') {
+                        return 'Descargar ZIP de Informes';
+                    }
+
+                    if ($generation->status === 'failed') {
+                        return 'Error en generación';
+                    }
+
+                    return 'Descargar ZIP';
+                })
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color(function () {
+                    $exam = $this->record;
+                    $generation = ReportGeneration::where('exam_id', $exam->id)
+                        ->where('type', 'individual_pdfs')
+                        ->latest()
+                        ->first();
+
+                    if ($generation?->status === 'completed') {
+                        return 'success';
+                    }
+                    if ($generation?->status === 'failed') {
+                        return 'danger';
+                    }
+                    if ($generation?->status === 'processing') {
+                        return 'warning';
+                    }
+                    return 'gray';
+                })
+                ->disabled(function () {
+                    $exam = $this->record;
+                    $generation = ReportGeneration::where('exam_id', $exam->id)
+                        ->where('type', 'individual_pdfs')
+                        ->latest()
+                        ->first();
+
+                    return !$generation || $generation->status !== 'completed';
+                })
+                ->action(function () {
+                    $exam = $this->record;
+                    $generation = ReportGeneration::where('exam_id', $exam->id)
+                        ->where('type', 'individual_pdfs')
+                        ->where('status', 'completed')
+                        ->latest()
+                        ->first();
+
+                    if (!$generation || !$generation->file_path) {
+                        Notification::make()
+                            ->title('Archivo no disponible')
+                            ->body('El archivo ZIP no está disponible. Genera los informes primero.')
+                            ->danger()
+                            ->send();
+                        return;
+                    }
+
+                    $fullPath = storage_path('app/' . $generation->file_path);
+
+                    if (!file_exists($fullPath)) {
+                        Notification::make()
+                            ->title('Archivo no encontrado')
+                            ->body('El archivo ZIP ya no existe. Genera los informes nuevamente.')
+                            ->danger()
+                            ->send();
+                        return;
+                    }
+
+                    return response()->download($fullPath);
                 }),
 
             Action::make('back')

@@ -802,4 +802,202 @@ class ZipgradeMetricsService
 
         return $result;
     }
+
+    /**
+     * Obtiene las preguntas incorrectas de un estudiante con detalles completos.
+     */
+    public function getStudentIncorrectAnswers(Enrollment $enrollment, Exam $exam): Collection
+    {
+        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+
+        return StudentAnswer::where('enrollment_id', $enrollment->id)
+            ->where('is_correct', false)
+            ->whereHas('question', fn($q) => $q->whereIn('exam_session_id', $sessionIds))
+            ->with(['question.session', 'question.tags'])
+            ->get()
+            ->map(function ($answer) {
+                $question = $answer->question;
+                $area = $this->getAreaLabelFromQuestion($question);
+
+                return [
+                    'session' => $question->session?->session_number ?? 1,
+                    'question_number' => $question->question_number,
+                    'area' => $area,
+                    'correct_answer' => $question->correct_answer ?? '—',
+                    'dimension1_name' => $this->getDimension1Name($area),
+                    'dimension1_value' => $this->getDimension1FromQuestion($question, $area),
+                    'dimension2_name' => $this->getDimension2Name($area),
+                    'dimension2_value' => $this->getDimension2FromQuestion($question, $area),
+                    'dimension3_name' => $this->getDimension3Name($area),
+                    'dimension3_value' => $this->getDimension3FromQuestion($question, $area),
+                ];
+            })
+            ->sortBy(['session', 'question_number'])
+            ->values();
+    }
+
+    /**
+     * Calcula el percentil de un estudiante en el examen.
+     * Retorna el porcentaje de estudiantes que tienen puntaje menor o igual.
+     */
+    public function getStudentPercentile(Enrollment $enrollment, Exam $exam): int
+    {
+        $studentScore = $this->getStudentGlobalScore($enrollment, $exam);
+        $allEnrollments = $this->getEnrollmentsForExam($exam);
+
+        if ($allEnrollments->count() <= 1) {
+            return 100;
+        }
+
+        $scoresBelow = 0;
+        foreach ($allEnrollments as $e) {
+            $score = $this->getStudentGlobalScore($e, $exam);
+            if ($score < $studentScore) {
+                $scoresBelow++;
+            }
+        }
+
+        return (int) round(($scoresBelow / $allEnrollments->count()) * 100);
+    }
+
+    /**
+     * Obtiene el label del área desde una pregunta.
+     */
+    private function getAreaLabelFromQuestion($question): ?string
+    {
+        foreach ($question->tags as $tag) {
+            if ($tag->tag_type === 'area') {
+                $normalized = AreaConfig::normalizeAreaName($tag->tag_name);
+                return $normalized ? AreaConfig::getLabel($normalized) : $tag->tag_name;
+            }
+        }
+
+        foreach ($question->tags as $tag) {
+            if ($tag->parent_area) {
+                $normalized = AreaConfig::normalizeAreaName($tag->parent_area);
+                return $normalized ? AreaConfig::getLabel($normalized) : $tag->parent_area;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Obtiene la dimensión 1 de una pregunta.
+     */
+    private function getDimension1FromQuestion($question, ?string $area): ?string
+    {
+        if ($area === 'Inglés') {
+            $parte = $question->tags->firstWhere('tag_type', 'parte');
+            return $parte?->tag_name;
+        }
+
+        $competencia = $question->tags->firstWhere('tag_type', 'competencia');
+        return $competencia?->tag_name;
+    }
+
+    /**
+     * Obtiene la dimensión 2 de una pregunta.
+     */
+    private function getDimension2FromQuestion($question, ?string $area): ?string
+    {
+        if ($area === 'Inglés') {
+            return null;
+        }
+
+        if (in_array($area, ['Lectura', 'Lectura Crítica'])) {
+            $tipo = $question->tags->firstWhere('tag_type', 'tipo_texto');
+            return $tipo?->tag_name;
+        }
+
+        $componente = $question->tags->firstWhere('tag_type', 'componente');
+        return $componente?->tag_name;
+    }
+
+    /**
+     * Obtiene la dimensión 3 de una pregunta.
+     */
+    private function getDimension3FromQuestion($question, ?string $area): ?string
+    {
+        if (in_array($area, ['Lectura', 'Lectura Crítica'])) {
+            $nivel = $question->tags->firstWhere('tag_type', 'nivel_lectura');
+            return $nivel?->tag_name;
+        }
+
+        return null;
+    }
+
+    /**
+     * Obtiene el nombre de la dimensión 1 según el área.
+     */
+    private function getDimension1Name(?string $area): string
+    {
+        return $area === 'Inglés' ? 'Parte' : 'Competencia';
+    }
+
+    /**
+     * Obtiene el nombre de la dimensión 2 según el área.
+     */
+    private function getDimension2Name(?string $area): ?string
+    {
+        if ($area === 'Inglés') {
+            return null;
+        }
+        return in_array($area, ['Lectura', 'Lectura Crítica']) ? 'Tipo de Texto' : 'Componente';
+    }
+
+    /**
+     * Obtiene el nombre de la dimensión 3 según el área.
+     */
+    private function getDimension3Name(?string $area): ?string
+    {
+        return in_array($area, ['Lectura', 'Lectura Crítica']) ? 'Nivel de Lectura' : null;
+    }
+
+    /**
+     * Obtiene resumen de incorrectas por área para un estudiante.
+     */
+    public function getStudentIncorrectSummary(Enrollment $enrollment, Exam $exam): array
+    {
+        $sessionIds = ExamSession::where('exam_id', $exam->id)->pluck('id');
+
+        $areas = ['lectura', 'matematicas', 'sociales', 'naturales', 'ingles'];
+        $summary = [];
+
+        foreach ($areas as $area) {
+            $areaTag = $this->findAreaTag($area);
+            if (!$areaTag) {
+                continue;
+            }
+
+            // Total de preguntas del área
+            $questionIds = DB::table('exam_questions')
+                ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
+                ->whereIn('exam_questions.exam_session_id', $sessionIds)
+                ->where(function ($query) use ($areaTag, $area) {
+                    $query->where('question_tags.tag_hierarchy_id', $areaTag->id)
+                        ->orWhere('question_tags.inferred_area', $area);
+                })
+                ->distinct()
+                ->pluck('exam_questions.id');
+
+            $total = $questionIds->count();
+
+            // Incorrectas del estudiante en este área
+            $incorrect = StudentAnswer::where('enrollment_id', $enrollment->id)
+                ->whereIn('exam_question_id', $questionIds)
+                ->where('is_correct', false)
+                ->count();
+
+            $summary[$area] = [
+                'label' => AreaConfig::getLabel($area),
+                'total' => $total,
+                'incorrect' => $incorrect,
+                'correct' => $total - $incorrect,
+                'error_rate' => $total > 0 ? round(($incorrect / $total) * 100, 1) : 0,
+            ];
+        }
+
+        return $summary;
+    }
 }
