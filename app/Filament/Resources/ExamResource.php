@@ -539,6 +539,155 @@ class ExamResource extends Resource
                         }
                     }),
 
+                Tables\Actions\Action::make('import_session1_from_storage')
+                    ->label('Importar Sesión 1 (desde Storage)')
+                    ->icon('heroicon-o-folder-open')
+                    ->color('warning')
+                    ->form([
+                        Forms\Components\TextInput::make('filename')
+                            ->label('Nombre del archivo')
+                            ->helperText('Coloque el archivo CSV en storage/app/zipgrade-imports/ y escriba el nombre aquí (ej: sesion1.csv)')
+                            ->required()
+                            ->placeholder('sesion1.csv'),
+                    ])
+                    ->action(function (Exam $record, array $data) {
+                        set_time_limit(600); // 10 minutos para archivos grandes
+                        $filePath = storage_path('app/zipgrade-imports/' . $data['filename']);
+
+                        if (!file_exists($filePath)) {
+                            Notification::make()
+                                ->title('Archivo no encontrado')
+                                ->body("No se encontró el archivo: {$data['filename']} en storage/app/zipgrade-imports/")
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        // Obtener o crear sesión 1
+                        $session = $record->sessions()->firstOrCreate(
+                            ['session_number' => 1],
+                            ['name' => 'Sesión 1']
+                        );
+
+                        try {
+                            // Analizar tags primero
+                            $newTags = \App\Imports\ZipgradeTagsImport::analyzeFile($filePath);
+
+                            if (!empty($newTags)) {
+                                // Si hay tags nuevos, mostrar advertencia
+                                $tagNames = collect($newTags)->pluck('csv_name')->implode(', ');
+                                Notification::make()
+                                    ->title('Tags nuevos detectados')
+                                    ->body("Hay tags que necesitan clasificación: {$tagNames}. Configure los tags primero en Jerarquía de Tags.")
+                                    ->warning()
+                                    ->persistent()
+                                    ->send();
+                                return;
+                            }
+
+                            // Importar directamente
+                            $import = new \App\Imports\ZipgradeTagsImport($session->id, []);
+                            \Maatwebsite\Excel\Facades\Excel::import($import, $filePath);
+
+                            // Actualizar contador
+                            $questionCount = $session->questions()->count();
+                            $session->update(['total_questions' => $questionCount]);
+
+                            // Contar estudiantes importados
+                            $studentCount = \App\Models\StudentAnswer::whereHas('question', fn($q) => $q->where('exam_session_id', $session->id))
+                                ->distinct('enrollment_id')
+                                ->count('enrollment_id');
+
+                            Notification::make()
+                                ->title('Importación exitosa')
+                                ->body("Se importaron {$studentCount} estudiantes y {$questionCount} preguntas desde storage.")
+                                ->success()
+                                ->send();
+
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Error en la importación')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('import_session2_from_storage')
+                    ->label('Importar Sesión 2 (desde Storage)')
+                    ->icon('heroicon-o-folder-open')
+                    ->color('warning')
+                    ->form([
+                        Forms\Components\TextInput::make('filename')
+                            ->label('Nombre del archivo')
+                            ->helperText('Coloque el archivo CSV en storage/app/zipgrade-imports/ y escriba el nombre aquí (ej: sesion2.csv)')
+                            ->required()
+                            ->placeholder('sesion2.csv'),
+                    ])
+                    ->action(function (Exam $record, array $data) {
+                        set_time_limit(600); // 10 minutos para archivos grandes
+                        $filePath = storage_path('app/zipgrade-imports/' . $data['filename']);
+
+                        if (!file_exists($filePath)) {
+                            Notification::make()
+                                ->title('Archivo no encontrado')
+                                ->body("No se encontró el archivo: {$data['filename']} en storage/app/zipgrade-imports/")
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        // Obtener o crear sesión 2
+                        $session = $record->sessions()->firstOrCreate(
+                            ['session_number' => 2],
+                            ['name' => 'Sesión 2']
+                        );
+
+                        try {
+                            // Analizar tags primero
+                            $newTags = \App\Imports\ZipgradeTagsImport::analyzeFile($filePath);
+
+                            if (!empty($newTags)) {
+                                $tagNames = collect($newTags)->pluck('csv_name')->implode(', ');
+                                Notification::make()
+                                    ->title('Tags nuevos detectados')
+                                    ->body("Hay tags que necesitan clasificación: {$tagNames}. Configure los tags primero en Jerarquía de Tags.")
+                                    ->warning()
+                                    ->persistent()
+                                    ->send();
+                                return;
+                            }
+
+                            // Importar directamente
+                            $import = new \App\Imports\ZipgradeTagsImport($session->id, []);
+                            \Maatwebsite\Excel\Facades\Excel::import($import, $filePath);
+
+                            // Actualizar contador
+                            $questionCount = $session->questions()->count();
+                            $session->update(['total_questions' => $questionCount]);
+
+                            // Contar estudiantes importados
+                            $studentCount = \App\Models\StudentAnswer::whereHas('question', fn($q) => $q->where('exam_session_id', $session->id))
+                                ->distinct('enrollment_id')
+                                ->count('enrollment_id');
+
+                            Notification::make()
+                                ->title('Importación exitosa')
+                                ->body("Se importaron {$studentCount} estudiantes y {$questionCount} preguntas desde storage.")
+                                ->success()
+                                ->send();
+
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Error en la importación')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
                 Tables\Actions\Action::make('import_stats_session1')
                     ->label('Importar Stats Sesión 1')
                     ->icon('heroicon-o-chart-bar')
@@ -625,6 +774,142 @@ class ExamResource extends Resource
                                 ->danger()
                                 ->send();
                         }
+                    }),
+
+                Tables\Actions\Action::make('clear_session1')
+                    ->label('Limpiar Sesión 1')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('¿Limpiar datos de Sesión 1?')
+                    ->modalDescription('Esto eliminará todas las preguntas, tags y respuestas de la Sesión 1. Los estudiantes y sus matrículas NO se eliminarán. Esta acción no se puede deshacer.')
+                    ->modalSubmitActionLabel('Sí, limpiar Sesión 1')
+                    ->visible(fn (Exam $record): bool => $record->sessions()->where('session_number', 1)->exists())
+                    ->action(function (Exam $record) {
+                        $session = $record->sessions()->where('session_number', 1)->first();
+                        if ($session) {
+                            // Eliminar respuestas de estudiantes de esta sesión
+                            DB::table('student_answers')
+                                ->whereIn('exam_question_id', function ($query) use ($session) {
+                                    $query->select('id')
+                                        ->from('exam_questions')
+                                        ->where('exam_session_id', $session->id);
+                                })
+                                ->delete();
+
+                            // Eliminar question_tags de esta sesión
+                            DB::table('question_tags')
+                                ->whereIn('exam_question_id', function ($query) use ($session) {
+                                    $query->select('id')
+                                        ->from('exam_questions')
+                                        ->where('exam_session_id', $session->id);
+                                })
+                                ->delete();
+
+                            // Eliminar preguntas de esta sesión
+                            $session->questions()->delete();
+
+                            // Resetear contador de preguntas
+                            $session->update(['total_questions' => 0]);
+
+                            // Eliminar registros de importación
+                            $session->imports()->delete();
+
+                            Notification::make()
+                                ->title('Sesión 1 limpiada')
+                                ->body('Puede reimportar los datos de la Sesión 1.')
+                                ->success()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('clear_session2')
+                    ->label('Limpiar Sesión 2')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('¿Limpiar datos de Sesión 2?')
+                    ->modalDescription('Esto eliminará todas las preguntas, tags y respuestas de la Sesión 2. Los estudiantes y sus matrículas NO se eliminarán. Esta acción no se puede deshacer.')
+                    ->modalSubmitActionLabel('Sí, limpiar Sesión 2')
+                    ->visible(fn (Exam $record): bool => $record->sessions()->where('session_number', 2)->exists())
+                    ->action(function (Exam $record) {
+                        $session = $record->sessions()->where('session_number', 2)->first();
+                        if ($session) {
+                            // Eliminar respuestas de estudiantes de esta sesión
+                            DB::table('student_answers')
+                                ->whereIn('exam_question_id', function ($query) use ($session) {
+                                    $query->select('id')
+                                        ->from('exam_questions')
+                                        ->where('exam_session_id', $session->id);
+                                })
+                                ->delete();
+
+                            // Eliminar question_tags de esta sesión
+                            DB::table('question_tags')
+                                ->whereIn('exam_question_id', function ($query) use ($session) {
+                                    $query->select('id')
+                                        ->from('exam_questions')
+                                        ->where('exam_session_id', $session->id);
+                                })
+                                ->delete();
+
+                            // Eliminar preguntas de esta sesión
+                            $session->questions()->delete();
+
+                            // Resetear contador de preguntas
+                            $session->update(['total_questions' => 0]);
+
+                            // Eliminar registros de importación
+                            $session->imports()->delete();
+
+                            Notification::make()
+                                ->title('Sesión 2 limpiada')
+                                ->body('Puede reimportar los datos de la Sesión 2.')
+                                ->success()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('clear_all_sessions')
+                    ->label('Limpiar Todo')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('¿Limpiar TODAS las sesiones?')
+                    ->modalDescription('Esto eliminará TODAS las preguntas, tags y respuestas de AMBAS sesiones. Los estudiantes y sus matrículas NO se eliminarán. Esta acción no se puede deshacer.')
+                    ->modalSubmitActionLabel('Sí, limpiar todo')
+                    ->visible(fn (Exam $record): bool => $record->sessions()->exists())
+                    ->action(function (Exam $record) {
+                        foreach ($record->sessions as $session) {
+                            // Eliminar respuestas
+                            DB::table('student_answers')
+                                ->whereIn('exam_question_id', function ($query) use ($session) {
+                                    $query->select('id')
+                                        ->from('exam_questions')
+                                        ->where('exam_session_id', $session->id);
+                                })
+                                ->delete();
+
+                            // Eliminar question_tags
+                            DB::table('question_tags')
+                                ->whereIn('exam_question_id', function ($query) use ($session) {
+                                    $query->select('id')
+                                        ->from('exam_questions')
+                                        ->where('exam_session_id', $session->id);
+                                })
+                                ->delete();
+
+                            // Eliminar preguntas
+                            $session->questions()->delete();
+                            $session->update(['total_questions' => 0]);
+                            $session->imports()->delete();
+                        }
+
+                        Notification::make()
+                            ->title('Todas las sesiones limpiadas')
+                            ->body('Puede reimportar los datos de ambas sesiones.')
+                            ->success()
+                            ->send();
                     }),
 
                 Tables\Actions\Action::make('view_zipgrade_results')

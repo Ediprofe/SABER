@@ -13,10 +13,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\ToCollection;
-use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 
-class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingRow
+class ZipgradeTagsImport implements ToCollection, WithHeadingRow
 {
     private int $examSessionId;
 
@@ -31,6 +30,10 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
     private array $newTags = [];
 
     private array $tagsForNormalization = [];
+
+    private array $enrollmentCache = [];
+
+    private ?ExamSession $session = null;
 
     public function __construct(int $examSessionId, array $tagMappings = [])
     {
@@ -199,48 +202,41 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
         return null;
     }
 
-    public function chunkSize(): int
-    {
-        return 1000; // Process 1000 rows at a time to avoid memory issues
-    }
-
     public function collection(Collection $rows)
     {
         $this->rowCount = $rows->count();
 
-        // Log first few rows to debug column names
         if ($this->rowCount > 0) {
             $sampleRow = $rows->first();
-            Log::info('Zipgrade import - Sample row keys', [
+            Log::info('Zipgrade import - Start processing', [
+                'rows' => $this->rowCount,
                 'keys' => array_keys($sampleRow->toArray()),
                 'session_id' => $this->examSessionId,
             ]);
         }
 
         if ($this->rowCount === 0) {
-            Log::warning('Zipgrade import - No rows to process', [
-                'session_id' => $this->examSessionId,
-            ]);
-
+            Log::warning('Zipgrade import - No rows to process', ['session_id' => $this->examSessionId]);
             return;
+        }
+
+        // Cargar sesión y examen una sola vez
+        $this->session = ExamSession::with('exam')->find($this->examSessionId);
+        if (!$this->session || !$this->session->exam) {
+            throw new \Exception("Sesión o examen no encontrado.");
         }
 
         DB::beginTransaction();
 
         try {
-            // Step 1: Collect unique data
             $uniqueStudents = [];
             $uniqueQuestions = [];
             $uniqueTags = [];
             $answers = [];
             $processedRows = 0;
-            $skippedRows = 0;
 
             foreach ($rows as $index => $row) {
-                // Handle both uppercase and lowercase column names
                 $earnedPoints = (float) str_replace(',', '.', $row['EarnedPoints'] ?? $row['earnedpoints'] ?? $row['earned_points'] ?? '0');
-
-                // Key fields - try multiple variations
                 $tagName = trim($row['Tag'] ?? $row['tag'] ?? '');
                 $studentId = trim($row['StudentID'] ?? $row['studentid'] ?? $row['student_id'] ?? '');
                 $studentFirstName = trim($row['StudentFirstName'] ?? $row['studentfirstname'] ?? $row['student_first_name'] ?? '');
@@ -248,25 +244,13 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
                 $questionNum = (int) ($row['QuestionNumber'] ?? $row['questionnumber'] ?? $row['question_num'] ?? $row['QuestionNum'] ?? $row['questionnum'] ?? 0);
                 $quizName = trim($row['QuizName'] ?? $row['quizname'] ?? '');
 
-                // Skip rows with missing required data
                 if (empty($tagName) || empty($studentId) || $questionNum <= 0) {
-                    $skippedRows++;
-                    Log::debug('Zipgrade import - Skipping row', [
-                        'index' => $index,
-                        'tag' => $tagName,
-                        'student_id' => $studentId,
-                        'question_num' => $questionNum,
-                        'raw_row' => $row->toArray(),
-                    ]);
-
                     continue;
                 }
 
                 $processedRows++;
 
-                // Store unique student
-                // IMPORTANTE: $studentId es el zipgrade_id (ID interno de Zipgrade), NO el documento de identidad
-                if (! isset($uniqueStudents[$studentId])) {
+                if (!isset($uniqueStudents[$studentId])) {
                     $uniqueStudents[$studentId] = [
                         'zipgrade_id' => $studentId,
                         'first_name' => $studentFirstName,
@@ -274,22 +258,18 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
                     ];
                 }
 
-                // Store unique question
                 $questionKey = "{$this->examSessionId}_{$questionNum}";
-                if (! isset($uniqueQuestions[$questionKey])) {
+                if (!isset($uniqueQuestions[$questionKey])) {
                     $uniqueQuestions[$questionKey] = [
                         'exam_session_id' => $this->examSessionId,
                         'question_number' => $questionNum,
                     ];
                 }
 
-                // Store unique tag
-                if (! isset($uniqueTags[$tagName])) {
+                if (!isset($uniqueTags[$tagName])) {
                     $uniqueTags[$tagName] = $tagName;
                 }
 
-                // Store answer info (will be processed later)
-                // IMPORTANTE: $studentId es el zipgrade_id
                 $answers[] = [
                     'student_id' => $studentId,
                     'question_num' => $questionNum,
@@ -299,29 +279,24 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
                 ];
             }
 
-            // Step 2: Check for new tags
+            // --- OPTIMIZACIÓN: Pre-carga de datos ---
             $this->detectNewTags($uniqueTags);
-
-            // Step 3: Create or find tags
             $tagIds = $this->ensureTagsExist($uniqueTags);
-
-            // Step 4: Find or create students
             $studentIds = $this->findOrCreateStudents($uniqueStudents);
-
-            // Step 5: Create questions
             $questionIds = $this->createOrFindQuestions($uniqueQuestions);
 
-            // Step 6: Create question tags
-            $this->createQuestionTags($rows, $questionIds, $tagIds);
+            // Pre-cargar jerarquía de tags para inferencia rápida
+            $tagsInfo = TagHierarchy::whereIn('id', array_values($tagIds))->get()->keyBy('id');
 
-            // Step 7: Create student answers
-            $this->createStudentAnswers($answers, $questionIds, $studentIds);
+            // --- OPTIMIZACIÓN: Question Tags en lote ---
+            $this->createQuestionTagsBulk($rows, $questionIds, $tagIds, $tagsInfo);
 
-            // Update session quiz name
-            $session = ExamSession::find($this->examSessionId);
-            if ($session && ! empty($answers)) {
-                $session->zipgrade_quiz_name = $answers[0]['quiz_name'] ?? null;
-                $session->save();
+            // --- OPTIMIZACIÓN: Student Answers en lote ---
+            $this->createStudentAnswersBulk($answers, $questionIds, $studentIds);
+
+            if ($this->session && !empty($answers)) {
+                $this->session->zipgrade_quiz_name = $answers[0]['quiz_name'] ?? null;
+                $this->session->save();
             }
 
             DB::commit();
@@ -330,10 +305,8 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
                 'session_id' => $this->examSessionId,
                 'rows_total' => $this->rowCount,
                 'rows_processed' => $processedRows,
-                'rows_skipped' => $skippedRows,
                 'students_count' => count($uniqueStudents),
                 'questions_count' => count($uniqueQuestions),
-                'tags_count' => count($uniqueTags),
             ]);
 
         } catch (\Exception $e) {
@@ -438,36 +411,33 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
     private function findOrCreateStudents(array $uniqueStudents): array
     {
         $studentIds = [];
-        $this->processedStudents = [];
+        $zipIds = array_keys($uniqueStudents);
+        
+        // Pre-cargar todos los estudiantes que tienen zipgrade_id en una sola consulta
+        $existingStudents = Student::whereIn('zipgrade_id', $zipIds)->get()->keyBy('zipgrade_id');
 
         foreach ($uniqueStudents as $zipgradeId => $data) {
-            // First try to find by zipgrade_id (campo correcto del CSV de Zipgrade)
-            $student = Student::where('zipgrade_id', $zipgradeId)->first();
-
-            if (! $student && ! empty($data['first_name']) && ! empty($data['last_name'])) {
-                // Try to find by name as fallback
+            if (isset($existingStudents[$zipgradeId])) {
+                $student = $existingStudents[$zipgradeId];
+            } else {
+                // Si no existe, intentar por nombre como fallback
                 $student = Student::where('first_name', $data['first_name'])
                     ->where('last_name', $data['last_name'])
                     ->first();
 
-                // If found by name, update zipgrade_id
                 if ($student) {
                     $student->zipgrade_id = $zipgradeId;
                     $student->save();
+                } else {
+                    // Si aún no existe, crear uno temporal
+                    $tempCode = 'TEMP-'.strtoupper(uniqid());
+                    $student = Student::create([
+                        'code' => $tempCode,
+                        'zipgrade_id' => $zipgradeId,
+                        'first_name' => $data['first_name'] ?: 'Estudiante',
+                        'last_name' => $data['last_name'] ?: $zipgradeId,
+                    ]);
                 }
-            }
-
-            // If still not found, create new student
-            if (! $student) {
-                // Generate a temporary code
-                $tempCode = 'TEMP-'.strtoupper(uniqid());
-
-                $student = Student::create([
-                    'code' => $tempCode,
-                    'zipgrade_id' => $zipgradeId,
-                    'first_name' => $data['first_name'] ?: 'Estudiante',
-                    'last_name' => $data['last_name'] ?: $zipgradeId,
-                ]);
             }
 
             $studentIds[$zipgradeId] = $student->id;
@@ -503,136 +473,118 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
     }
 
     /**
-     * Crea los tags de las preguntas.
+     * Crea los tags de las preguntas de forma masiva.
      */
-    private function createQuestionTags(Collection $rows, array $questionIds, array $tagIds): void
+    private function createQuestionTagsBulk(Collection $rows, array $questionIds, array $tagIds, Collection $tagsInfo): void
     {
-        // Clear existing tags for these questions
-        ExamQuestion::whereIn('id', $questionIds)
-            ->each(function ($question) {
-                $question->questionTags()->delete();
-            });
+        $inserts = [];
+        $seen = [];
 
-        // Create new tags
         foreach ($rows as $row) {
-            // Handle both uppercase and lowercase column names
             $tagName = trim($row['Tag'] ?? $row['tag'] ?? '');
             $questionNum = (int) ($row['QuestionNumber'] ?? $row['questionnumber'] ?? $row['question_num'] ?? $row['QuestionNum'] ?? $row['questionnum'] ?? 0);
 
-            if (empty($tagName) || $questionNum <= 0) {
-                continue;
-            }
-
-            if (! isset($questionIds[$questionNum]) || ! isset($tagIds[$tagName])) {
-                continue;
-            }
+            if (empty($tagName) || $questionNum <= 0) continue;
+            if (!isset($questionIds[$questionNum]) || !isset($tagIds[$tagName])) continue;
 
             $questionId = $questionIds[$questionNum];
             $tagId = $tagIds[$tagName];
+            $key = "{$questionId}_{$tagId}";
 
-            // Check if already exists
-            $exists = QuestionTag::where('exam_question_id', $questionId)
-                ->where('tag_hierarchy_id', $tagId)
-                ->exists();
+            if (!isset($seen[$key])) {
+                $tag = $tagsInfo->get($tagId);
+                $inferredArea = $tag ? ($tag->isArea() ? $tag->tag_name : $tag->parent_area) : null;
 
-            if (! $exists) {
-                // Infer area if tag is not an area
-                $tag = TagHierarchy::find($tagId);
-                $inferredArea = null;
-
-                if ($tag) {
-                    if ($tag->isArea()) {
-                        // Si es un tag de área (ej: "Ciencias Naturales", "Matemáticas"), usar el nombre del tag como área
-                        $inferredArea = $tag->tag_name;
-                    } else {
-                        // Si es un tag hijo (competencia, componente, etc.), usar el área padre
-                        $inferredArea = $tag->parent_area;
-                    }
-                }
-
-                QuestionTag::create([
+                $inserts[] = [
                     'exam_question_id' => $questionId,
                     'tag_hierarchy_id' => $tagId,
                     'inferred_area' => $inferredArea,
-                ]);
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                $seen[$key] = true;
             }
+
+            // Insertar cada 500 para evitar límites de SQL
+            if (count($inserts) >= 500) {
+                QuestionTag::insert($inserts);
+                $inserts = [];
+            }
+        }
+
+        if (!empty($inserts)) {
+            QuestionTag::insert($inserts);
         }
     }
 
     /**
-     * Crea las respuestas de los estudiantes.
+     * Crea las respuestas de los estudiantes de forma masiva.
      */
-    private function createStudentAnswers(array $answers, array $questionIds, array $studentIds): void
+    private function createStudentAnswersBulk(array $answers, array $questionIds, array $studentIds): void
     {
-        // Process unique student-question combinations
-        $uniqueAnswers = [];
+        // Pre-cargar todas las matrículas necesarias
+        $this->preloadEnrollments(array_values($studentIds));
 
+        $uniqueAnswers = [];
         foreach ($answers as $answer) {
             $studentId = $answer['student_id'];
             $questionNum = $answer['question_num'];
 
-            if (! isset($studentIds[$studentId]) || ! isset($questionIds[$questionNum])) {
-                continue;
-            }
+            if (!isset($studentIds[$studentId]) || !isset($questionIds[$questionNum])) continue;
 
-            $enrollmentId = $this->getEnrollmentId($studentIds[$studentId]);
-            if (! $enrollmentId) {
+            $enrollmentId = $this->enrollmentCache[$studentIds[$studentId]] ?? null;
+            if (!$enrollmentId) {
+                Log::warning("Zipgrade import - No active enrollment found for student ID: {$studentId} system_id: " . $studentIds[$studentId]);
                 continue;
             }
 
             $questionId = $questionIds[$questionNum];
             $key = "{$enrollmentId}_{$questionId}";
 
-            // Only store the first (or any correct) answer for each question
-            if (! isset($uniqueAnswers[$key])) {
+            if (!isset($uniqueAnswers[$key])) {
                 $uniqueAnswers[$key] = [
                     'exam_question_id' => $questionId,
                     'enrollment_id' => $enrollmentId,
                     'is_correct' => $answer['is_correct'],
                 ];
             } elseif ($answer['is_correct']) {
-                // If we found a correct answer, prefer it
                 $uniqueAnswers[$key]['is_correct'] = true;
             }
         }
 
-        // Delete existing answers for these questions
-        $questionIdList = array_values($questionIds);
-        $enrollmentIdList = array_unique(array_map(fn ($a) => $a['enrollment_id'], $uniqueAnswers));
+        $inserts = [];
+        foreach ($uniqueAnswers as $answerData) {
+            $inserts[] = array_merge($answerData, [
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
 
-        if (! empty($questionIdList) && ! empty($enrollmentIdList)) {
-            StudentAnswer::whereIn('exam_question_id', $questionIdList)
-                ->whereIn('enrollment_id', $enrollmentIdList)
-                ->delete();
+            if (count($inserts) >= 500) {
+                StudentAnswer::insert($inserts);
+                $inserts = [];
+            }
         }
 
-        // Insert new answers
-        foreach ($uniqueAnswers as $answerData) {
-            StudentAnswer::create($answerData);
+        if (!empty($inserts)) {
+            StudentAnswer::insert($inserts);
         }
     }
 
     /**
-     * Obtiene el ID de matrícula activa para un estudiante.
+     * Pre-carga las matrículas activas de los estudiantes para el año del examen.
      */
-    private function getEnrollmentId(int $studentId): ?int
+    private function preloadEnrollments(array $systemStudentIds): void
     {
-        $session = ExamSession::find($this->examSessionId);
-        if (! $session) {
-            return null;
-        }
+        if (!$this->session || !$this->session->exam) return;
 
-        $exam = $session->exam;
-        if (! $exam) {
-            return null;
-        }
-
-        $enrollment = Enrollment::where('student_id', $studentId)
-            ->where('academic_year_id', $exam->academic_year_id)
+        $enrollments = Enrollment::whereIn('student_id', $systemStudentIds)
+            ->where('academic_year_id', $this->session->exam->academic_year_id)
             ->where('status', 'ACTIVE')
-            ->first();
+            ->get();
 
-        return $enrollment?->id;
+        foreach ($enrollments as $enrollment) {
+            $this->enrollmentCache[$enrollment->student_id] = $enrollment->id;
+        }
     }
 
     public function getRowCount(): int
@@ -655,3 +607,4 @@ class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingR
         return count($this->newTags) > 0;
     }
 }
+

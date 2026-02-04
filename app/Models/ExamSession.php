@@ -24,6 +24,11 @@ class ExamSession extends Model
         return $this->hasOne(ZipgradeImport::class, 'exam_session_id');
     }
 
+    public function imports(): HasMany
+    {
+        return $this->hasMany(ZipgradeImport::class, 'exam_session_id');
+    }
+
     public function questions(): HasMany
     {
         return $this->hasMany(ExamQuestion::class, 'exam_session_id');
