@@ -22,6 +22,9 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Jobs\GenerateStudentReportsJob;
 use App\Models\ReportGeneration;
 use Filament\Notifications\Notification;
+use App\Jobs\SendStudentReportsEmailJob;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 
 
 class ZipgradeResults extends Page implements HasTable
@@ -139,7 +142,174 @@ class ZipgradeResults extends Page implements HasTable
             ->defaultSort('student.document_id', 'asc')
             ->poll(null)
             ->emptyStateHeading('No hay estudiantes con resultados')
-            ->emptyStateDescription('Importe datos de Zipgrade para ver los resultados.');
+            ->emptyStateDescription('Importe datos de Zipgrade para ver los resultados.')
+            ->actions([
+                \Filament\Tables\Actions\Action::make('send_email_single')
+                    ->label('Enviar Email')
+                    ->icon('heroicon-o-envelope')
+                    ->color('success')
+                    ->size('sm')
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Enrollment $record) => "Enviar reporte a {$record->student->full_name}")
+                    ->modalDescription(fn (Enrollment $record) => $record->student->email
+                        ? "Se enviará el reporte a: **{$record->student->email}**"
+                        : "⚠️ Este estudiante no tiene email registrado.")
+                    ->modalSubmitActionLabel('Enviar')
+                    ->visible(fn (Enrollment $record) => !empty($record->student->email))
+                    ->action(function (Enrollment $record) {
+                        // Verificar que hay PDFs generados
+                        $reportGeneration = ReportGeneration::where('exam_id', $this->record->id)
+                            ->where('type', 'individual_pdfs')
+                            ->where('status', 'completed')
+                            ->latest()
+                            ->first();
+
+                        if (!$reportGeneration || !$reportGeneration->file_path) {
+                            Notification::make()
+                                ->title('Error')
+                                ->body('Primero debe generar los reportes individuales.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        $zipPath = storage_path('app/' . $reportGeneration->file_path);
+
+                        if (!file_exists($zipPath)) {
+                            Notification::make()
+                                ->title('Error')
+                                ->body('No se encontró el archivo de reportes.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        // Extraer PDF específico del ZIP
+                        $pdfService = app(\App\Services\IndividualStudentPdfService::class);
+                        $metricsService = app(\App\Services\ZipgradeMetricsService::class);
+
+                        $tempDir = storage_path('app/temp-single-email-' . uniqid());
+                        mkdir($tempDir, 0755, true);
+
+                        $zip = new \ZipArchive();
+                        if ($zip->open($zipPath) !== true) {
+                            Notification::make()
+                                ->title('Error')
+                                ->body('No se pudo abrir el archivo de reportes.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        $pdfRelativePath = $pdfService->getRelativePath($record);
+                        $zip->extractTo($tempDir, $pdfRelativePath);
+                        $zip->close();
+
+                        $pdfFullPath = $tempDir . '/' . $pdfRelativePath;
+
+                        if (!file_exists($pdfFullPath)) {
+                            // Limpiar
+                            $this->deleteDirectory($tempDir);
+                            Notification::make()
+                                ->title('Error')
+                                ->body("No se encontró el PDF de {$record->student->full_name}")
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        try {
+                            $globalScore = $metricsService->getStudentGlobalScore($record, $this->record);
+
+                            Mail::to($record->student->email)->send(
+                                new \App\Mail\StudentReportMail(
+                                    enrollment: $record,
+                                    exam: $this->record,
+                                    pdfPath: $pdfFullPath,
+                                    globalScore: $globalScore
+                                )
+                            );
+
+                            Notification::make()
+                                ->title('Email enviado')
+                                ->body("Reporte enviado a {$record->student->email}")
+                                ->success()
+                                ->send();
+
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Error al enviar')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+
+                        // Limpiar directorio temporal
+                        $this->deleteDirectory($tempDir);
+                    }),
+            ])
+            ->bulkActions([
+                \Filament\Tables\Actions\BulkAction::make('send_email_selected')
+                    ->label('Enviar Email a Seleccionados')
+                    ->icon('heroicon-o-envelope')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Enviar reportes a estudiantes seleccionados')
+                    ->modalDescription(function ($records) {
+                        $withEmail = $records->filter(fn ($r) => !empty($r->student->email))->count();
+                        $withoutEmail = $records->count() - $withEmail;
+
+                        return "Se enviarán emails a **{$withEmail}** estudiantes.\n\n" .
+                               ($withoutEmail > 0 ? "⚠️ {$withoutEmail} estudiantes no tienen email y serán omitidos." : "");
+                    })
+                    ->modalSubmitActionLabel('Enviar Emails')
+                    ->deselectRecordsAfterCompletion()
+                    ->action(function ($records) {
+                        // Verificar PDFs
+                        $reportGeneration = ReportGeneration::where('exam_id', $this->record->id)
+                            ->where('type', 'individual_pdfs')
+                            ->where('status', 'completed')
+                            ->latest()
+                            ->first();
+
+                        if (!$reportGeneration || !$reportGeneration->file_path) {
+                            Notification::make()
+                                ->title('Error')
+                                ->body('Primero debe generar los reportes individuales.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        // Filtrar solo los que tienen email
+                        $enrollmentsWithEmail = $records->filter(fn ($r) => !empty($r->student->email));
+
+                        if ($enrollmentsWithEmail->isEmpty()) {
+                            Notification::make()
+                                ->title('Sin destinatarios')
+                                ->body('Ninguno de los estudiantes seleccionados tiene email.')
+                                ->warning()
+                                ->send();
+                            return;
+                        }
+
+                        // Despachar Job con los IDs seleccionados
+                        $enrollmentIds = $enrollmentsWithEmail->pluck('id')->toArray();
+                        SendStudentReportsEmailJob::dispatch(
+                            exam: $this->record,
+                            groupFilter: null,
+                            piarFilter: null,
+                            enrollmentIds: $enrollmentIds
+                        );
+
+                        $count = count($enrollmentIds);
+                        Notification::make()
+                            ->title('Enviando emails')
+                            ->body("Se están enviando {$count} emails en segundo plano. Revise los logs para el progreso.")
+                            ->success()
+                            ->send();
+                    }),
+            ]);
     }
 
     public function getHeaderActions(): array
@@ -343,6 +513,95 @@ class ZipgradeResults extends Page implements HasTable
                     return response()->download($fullPath);
                 }),
 
+            Action::make('send_reports_email')
+                ->label('Enviar por Email')
+                ->icon('heroicon-o-envelope')
+                ->color('success')
+                ->requiresConfirmation()
+                ->modalHeading('Enviar Reportes por Email')
+                ->modalDescription(function () {
+                    // Contar estudiantes con email
+                    $withEmail = Enrollment::query()
+                        ->where('academic_year_id', $this->record->academic_year_id)
+                        ->where('status', 'ACTIVE')
+                        ->whereHas('student', fn($q) => $q->whereNotNull('email')->where('email', '!=', ''))
+                        ->whereHas('studentAnswers.question.session', fn($q) => $q->where('exam_id', $this->record->id))
+                        ->count();
+
+                    $withoutEmail = Enrollment::query()
+                        ->where('academic_year_id', $this->record->academic_year_id)
+                        ->where('status', 'ACTIVE')
+                        ->whereHas('studentAnswers.question.session', fn($q) => $q->where('exam_id', $this->record->id))
+                        ->whereDoesntHave('student', fn($q) => $q->whereNotNull('email')->where('email', '!=', ''))
+                        ->count();
+
+                    // Verificar si hay PDFs generados
+                    $hasReports = ReportGeneration::where('exam_id', $this->record->id)
+                        ->where('type', 'individual_pdfs')
+                        ->where('status', 'completed')
+                        ->exists();
+
+                    $message = "Se enviarán los reportes individuales por email.\n\n";
+                    $message .= "📧 Estudiantes con email: **{$withEmail}**\n";
+                    $message .= "⚠️ Estudiantes sin email: **{$withoutEmail}**\n\n";
+
+                    if (!$hasReports) {
+                        $message .= "❌ **ATENCIÓN:** No hay reportes PDF generados. Primero debe generar los reportes individuales.";
+                    }
+
+                    return $message;
+                })
+                ->modalSubmitActionLabel('Enviar Emails')
+                ->visible(function () {
+                    // Solo visible si hay reportes generados
+                    return ReportGeneration::where('exam_id', $this->record->id)
+                        ->where('type', 'individual_pdfs')
+                        ->where('status', 'completed')
+                        ->exists();
+                })
+                ->action(function () {
+                    // Verificar que hay PDFs
+                    $reportGeneration = ReportGeneration::where('exam_id', $this->record->id)
+                        ->where('type', 'individual_pdfs')
+                        ->where('status', 'completed')
+                        ->latest()
+                        ->first();
+
+                    if (!$reportGeneration) {
+                        Notification::make()
+                            ->title('Error')
+                            ->body('Primero debe generar los reportes individuales.')
+                            ->danger()
+                            ->send();
+                        return;
+                    }
+
+                    $withEmail = Enrollment::query()
+                        ->where('academic_year_id', $this->record->academic_year_id)
+                        ->where('status', 'ACTIVE')
+                        ->whereHas('student', fn($q) => $q->whereNotNull('email')->where('email', '!=', ''))
+                        ->whereHas('studentAnswers.question.session', fn($q) => $q->where('exam_id', $this->record->id))
+                        ->count();
+
+                    if ($withEmail === 0) {
+                        Notification::make()
+                            ->title('Sin destinatarios')
+                            ->body('No hay estudiantes con email registrado.')
+                            ->warning()
+                            ->send();
+                        return;
+                    }
+
+                    // Despachar job
+                    SendStudentReportsEmailJob::dispatch($this->record);
+
+                    Notification::make()
+                        ->title('Enviando emails')
+                        ->body("Se están enviando {$withEmail} emails en segundo plano. Esto puede tomar varios minutos.")
+                        ->success()
+                        ->send();
+                }),
+
             Action::make('back')
                 ->label('Volver')
                 ->url(fn () => ExamResource::getUrl('index'))
@@ -356,5 +615,19 @@ class ZipgradeResults extends Page implements HasTable
         return [
             \App\Filament\Widgets\ZipgradeStatsWidget::class,
         ];
+    }
+
+    private function deleteDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . '/' . $file;
+            is_dir($path) ? $this->deleteDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
     }
 }
