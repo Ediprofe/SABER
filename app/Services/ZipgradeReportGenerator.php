@@ -111,12 +111,13 @@ class ZipgradeReportGenerator
     private function buildStatisticsFromMetrics(Exam $exam, Collection $enrollments): object
     {
         $globalScores = [];
+        $globalScoresNonPiar = [];
         $areaScores = [
-            'lectura' => [],
-            'matematicas' => [],
-            'sociales' => [],
-            'naturales' => [],
-            'ingles' => [],
+            'lectura' => ['all' => [], 'non_piar' => []],
+            'matematicas' => ['all' => [], 'non_piar' => []],
+            'sociales' => ['all' => [], 'non_piar' => []],
+            'naturales' => ['all' => [], 'non_piar' => []],
+            'ingles' => ['all' => [], 'non_piar' => []],
         ];
 
         $piarCount = 0;
@@ -125,13 +126,23 @@ class ZipgradeReportGenerator
         foreach ($enrollments as $enrollment) {
             $scores = $this->metricsService->getStudentAllAreaScores($enrollment, $exam);
             $globalScores[] = $scores['global'];
-
-            foreach ($areaScores as $area => &$values) {
-                $values[] = $scores[$area];
+            
+            $isPiar = $enrollment->is_piar;
+            if (!$isPiar) {
+                $globalScoresNonPiar[] = $scores['global'];
             }
-            unset($values); // IMPORTANTE: romper la referencia
 
-            if ($enrollment->is_piar) {
+            foreach ($areaScores as $area => &$data) {
+                if (isset($scores[$area]) && $scores[$area] !== null) {
+                    $data['all'][] = $scores[$area];
+                    if (!$isPiar) {
+                        $data['non_piar'][] = $scores[$area];
+                    }
+                }
+            }
+            unset($data);
+
+            if ($isPiar) {
                 $piarCount++;
             } else {
                 $nonPiarCount++;
@@ -146,29 +157,37 @@ class ZipgradeReportGenerator
                 'piarCount' => 0,
                 'nonPiarCount' => 0,
                 'globalAverage' => 0,
+                'globalAverageNonPiar' => 0,
                 'globalStdDev' => 0,
                 'areaStatistics' => [],
             ];
         }
 
         $globalAvg = array_sum($globalScores) / $totalStudents;
+        $globalAvgNonPiar = count($globalScoresNonPiar) > 0 ? array_sum($globalScoresNonPiar) / count($globalScoresNonPiar) : 0;
         $globalStdDev = $this->calculateStdDev($globalScores, $globalAvg);
 
         // Calculate area statistics
         $areaStatistics = [];
         $areaLabels = AreaConfig::AREA_LABELS;
 
-        foreach ($areaScores as $area => $values) {
-            if (! empty($values)) {
-                $avg = array_sum($values) / count($values);
-                $stdDev = $this->calculateStdDev($values, $avg);
+        foreach ($areaScores as $area => $data) {
+            $allValues = $data['all'];
+            $nonPiarValues = $data['non_piar'];
+            
+            if (! empty($allValues)) {
+                $avgAll = array_sum($allValues) / count($allValues);
+                $avgNonPiar = count($nonPiarValues) > 0 ? array_sum($nonPiarValues) / count($nonPiarValues) : 0;
+                $stdDev = $this->calculateStdDev($allValues, $avgAll);
+                
                 $areaStatistics[] = (object) [
                     'area' => $areaLabels[$area],
-                    'average' => $avg,
+                    'average' => $avgAll,
+                    'averageNonPiar' => $avgNonPiar,
                     'stdDev' => $stdDev,
-                    'min' => min($values),
-                    'max' => max($values),
-                    'count' => count($values),
+                    'min' => min($allValues),
+                    'max' => max($allValues),
+                    'count' => count($allValues),
                 ];
             }
         }
@@ -178,6 +197,7 @@ class ZipgradeReportGenerator
             'piarCount' => $piarCount,
             'nonPiarCount' => $nonPiarCount,
             'globalAverage' => $globalAvg,
+            'globalAverageNonPiar' => $globalAvgNonPiar,
             'globalStdDev' => $globalStdDev,
             'areaStatistics' => $areaStatistics,
         ];

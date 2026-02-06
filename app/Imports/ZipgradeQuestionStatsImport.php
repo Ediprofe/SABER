@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
+use Maatwebsite\Excel\Imports\HeadingRowFormatter;
 
 class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, WithHeadingRow
 {
@@ -23,6 +25,40 @@ class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, Wit
     public function __construct(int $examSessionId)
     {
         $this->examSessionId = $examSessionId;
+
+        // Registrar un formateador de headers personalizado para Zipgrade
+        // Este formateador distingue entre "Response 1" (letra) y "Response 1 %" (porcentaje)
+        HeadingRowFormatter::extend('zipgrade', function ($value) {
+            // Primero normalizar: trim y lowercase
+            $value = strtolower(trim($value));
+
+            // Manejar columnas con % - estas son porcentajes
+            if (str_contains($value, '%')) {
+                // "Response 1 %" -> "response_1_pct"
+                // "% Correct" -> "pct_correct"
+                $value = str_replace('%', 'pct', $value);
+                $value = preg_replace('/\s+/', '_', $value);
+                $value = preg_replace('/_+/', '_', $value);
+                $value = trim($value, '_');
+                return $value;
+            }
+
+            // Manejar "# Correct" -> "num_correct"
+            if (str_contains($value, '#')) {
+                $value = str_replace('#', 'num', $value);
+            }
+
+            // Convertir espacios a underscores
+            $value = preg_replace('/\s+/', '_', $value);
+            // Eliminar caracteres especiales excepto underscore
+            $value = preg_replace('/[^a-z0-9_]/', '', $value);
+            // Eliminar underscores múltiples
+            $value = preg_replace('/_+/', '_', $value);
+            return trim($value, '_');
+        });
+
+        // Usar el formateador personalizado
+        HeadingRowFormatter::default('zipgrade');
     }
 
     public function chunkSize(): int
@@ -61,15 +97,13 @@ class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, Wit
                     ]);
                 }
 
-                // Las columnas del Excel real de Zipgrade:
-                // Question_Number, Primary_Answer, % Correct
-                // Response 1, Response 1 %, Response 2, Response 2 %, etc.
-                //
-                // Laravel Excel convierte a snake_case:
-                // response_1 (letra), response_1_ (porcentaje con % incluido)
+                // Las columnas del Excel de Zipgrade (con el formateador personalizado):
+                // response_1 = Letra de la respuesta más elegida
+                // response_1_pct = Porcentaje de esa respuesta
+                // pct_correct = Porcentaje de acierto
 
-                $questionNum = (int) ($row['question_number'] ?? $row['Question_Number'] ?? $row['questionnumber'] ?? 0);
-                $correctAnswer = trim($row['primary_answer'] ?? $row['Primary_Answer'] ?? '');
+                $questionNum = (int) ($row['question_number'] ?? 0);
+                $correctAnswer = strtoupper(trim($row['primary_answer'] ?? ''));
 
                 // Skip rows with missing question number
                 if ($questionNum <= 0) {
@@ -82,25 +116,19 @@ class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, Wit
                     continue;
                 }
 
-                // Los datos de Zipgrade YA vienen ordenados por % descendente
-                // Response 1 = 1° más elegida, Response 2 = 2° más elegida, etc.
-                // Múltiples variantes de nombres de columnas para compatibilidad
+                // Leer las respuestas con el nuevo formato de columnas
+                // response_1 = letra, response_1_pct = porcentaje
+                $response1 = strtoupper(trim($row['response_1'] ?? ''));
+                $response1Pct = $this->parsePercentage($row['response_1_pct'] ?? '0');
 
-                // Response 1 (letra) - buscar en múltiples formatos
-                $response1 = $this->getColumnValue($row, ['response_1', 'Response 1', 'response1', 'respuesta_1']);
-                $response1Pct = $this->parsePercentage($this->getColumnValue($row, ['response_1_', 'Response 1 %', 'response_1_pct', 'response1_pct', 'respuesta_1_pct'], '0'));
+                $response2 = strtoupper(trim($row['response_2'] ?? ''));
+                $response2Pct = $this->parsePercentage($row['response_2_pct'] ?? '0');
 
-                // Response 2 (letra)
-                $response2 = $this->getColumnValue($row, ['response_2', 'Response 2', 'response2', 'respuesta_2']);
-                $response2Pct = $this->parsePercentage($this->getColumnValue($row, ['response_2_', 'Response 2 %', 'response_2_pct', 'response2_pct', 'respuesta_2_pct'], '0'));
+                $response3 = strtoupper(trim($row['response_3'] ?? ''));
+                $response3Pct = $this->parsePercentage($row['response_3_pct'] ?? '0');
 
-                // Response 3 (letra)
-                $response3 = $this->getColumnValue($row, ['response_3', 'Response 3', 'response3', 'respuesta_3']);
-                $response3Pct = $this->parsePercentage($this->getColumnValue($row, ['response_3_', 'Response 3 %', 'response_3_pct', 'response3_pct', 'respuesta_3_pct'], '0'));
-
-                // Response 4 (letra)
-                $response4 = $this->getColumnValue($row, ['response_4', 'Response 4', 'response4', 'respuesta_4']);
-                $response4Pct = $this->parsePercentage($this->getColumnValue($row, ['response_4_', 'Response 4 %', 'response_4_pct', 'response4_pct', 'respuesta_4_pct'], '0'));
+                $response4 = strtoupper(trim($row['response_4'] ?? ''));
+                $response4Pct = $this->parsePercentage($row['response_4_pct'] ?? '0');
 
                 // Find the question
                 $question = ExamQuestion::where('exam_session_id', $this->examSessionId)

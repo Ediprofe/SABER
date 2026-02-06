@@ -320,6 +320,137 @@
             line-height: 1;
         }
 
+        .kpi-sub-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-xs);
+            margin-top: var(--space-sm);
+            padding-top: var(--space-sm);
+            border-top: 1px dashed var(--gray-200);
+        }
+
+        .kpi-sub-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .kpi-sub-label {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--gray-400);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .kpi-sub-value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--gray-700);
+        }
+
+        /* Stats Table */
+        .stats-table-wrapper {
+            margin-top: var(--space-xl);
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg);
+            border: 1px solid var(--gray-200);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .stats-table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-md);
+        }
+
+        .stats-table-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--gray-800);
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .stats-table th {
+            background: var(--gray-50);
+            color: var(--gray-500);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 10px;
+            padding: 12px;
+            border-bottom: 2px solid var(--gray-200);
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        .stats-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--gray-100);
+            text-align: center;
+        }
+
+        .stats-table tr:hover td {
+            background: var(--gray-50);
+        }
+
+        .area-name-cell {
+            text-align: left !important;
+            font-weight: 700;
+            color: var(--gray-800);
+            border-left: 4px solid var(--primary-500);
+        }
+
+        .avg-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 700;
+            min-width: 60px;
+        }
+
+        .avg-all { background: var(--primary-50); color: var(--primary-700); border: 1px solid var(--primary-100); }
+        .avg-non-piar { background: #f0fdf4; color: #166534; border: 1px solid #dcfce7; }
+        .avg-std { background: #fff7ed; color: #9a3412; border: 1px solid #ffedd5; }
+
+        /* KPI Section Headers */
+        .kpi-group-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--gray-400);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: var(--space-lg) 0 var(--space-md);
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+        }
+
+        .kpi-group-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--gray-100);
+        }
+
+        /* Area Specific KPI Themes */
+        .kpi-card.theme-lectura::before { background: var(--area-lectura); }
+        .kpi-card.theme-matematicas::before { background: var(--area-matematicas); }
+        .kpi-card.theme-sociales::before { background: var(--area-sociales); }
+        .kpi-card.theme-naturales::before { background: var(--area-naturales); }
+        .kpi-card.theme-ingles::before { background: var(--area-ingles); }
+
         .kpi-value-small {
             font-size: 14px;
             color: var(--gray-500);
@@ -995,30 +1126,67 @@
                 <h2 class="card-title">Indicadores Principales</h2>
             </div>
             <div class="card-body">
-            <div class="kpi-grid">
-                <div class="kpi-card">
-                    <div class="kpi-label">Total Estudiantes</div>
-                    <div class="kpi-value">{{ $statistics->totalStudents }}</div>
+                <!-- Global Metrics -->
+                <div class="kpi-group-title">Métricas Globales del Examen</div>
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-label">Total Estudiantes</div>
+                        <div class="kpi-value">{{ $statistics->totalStudents }}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Estudiantes PIAR</div>
+                        <div class="kpi-value">{{ $statistics->piarCount }}</div>
+                        <div class="kpi-value-small">{{ $statistics->totalStudents > 0 ? round(($statistics->piarCount / $statistics->totalStudents) * 100, 1) : 0 }}%</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Sin PIAR</div>
+                        <div class="kpi-value">{{ $statistics->nonPiarCount }}</div>
+                        <div class="kpi-value-small">{{ $statistics->totalStudents > 0 ? round(($statistics->nonPiarCount / $statistics->totalStudents) * 100, 1) : 0 }}%</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Promedio Global</div>
+                        <div class="kpi-value" style="color: var(--success);">{{ number_format($statistics->globalAverageNonPiar, 1) }}</div>
+                        <div class="kpi-sub-grid">
+                            <div class="kpi-sub-item">
+                                <span class="kpi-sub-label">CON PIAR</span>
+                                <span class="kpi-sub-value">{{ number_format($statistics->globalAverage, 1) }}</span>
+                            </div>
+                            <div class="kpi-sub-item">
+                                <span class="kpi-sub-label">SIN PIAR</span>
+                                <span class="kpi-sub-value" style="color: var(--success);">{{ number_format($statistics->globalAverageNonPiar, 1) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Desviación Estándar</div>
+                        <div class="kpi-value">{{ number_format($statistics->globalStdDev, 1) }}</div>
+                        <div class="kpi-value-small">Global</div>
+                    </div>
                 </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Estudiantes PIAR</div>
-                    <div class="kpi-value">{{ $statistics->piarCount }}</div>
-                    <div class="kpi-value-small">{{ $statistics->totalStudents > 0 ? round(($statistics->piarCount / $statistics->totalStudents) * 100, 1) : 0 }}%</div>
+
+                <!-- Area Specific Metrics -->
+                <div class="kpi-group-title">Desempeño por Áreas de Conocimiento</div>
+                <div class="kpi-grid">
+                    @foreach($statistics->areaStatistics as $areaStat)
+                    @php
+                        $areaSlug = \App\Support\AreaConfig::normalizeAreaName($areaStat->area);
+                    @endphp
+                    <div class="kpi-card theme-{{ $areaSlug }}">
+                        <div class="kpi-label">{{ $areaStat->area }}</div>
+                        <div class="kpi-value" style="font-size: 28px; color: var(--success);">{{ number_format($areaStat->averageNonPiar, 1) }}</div>
+                        <div class="kpi-sub-grid">
+                            <div class="kpi-sub-item">
+                                <span class="kpi-sub-label">CON PIAR</span>
+                                <span class="kpi-sub-value">{{ number_format($areaStat->average, 1) }}</span>
+                            </div>
+                            <div class="kpi-sub-item">
+                                <span class="kpi-sub-label">SIN PIAR</span>
+                                <span class="kpi-sub-value" style="color: var(--success);">{{ number_format($areaStat->averageNonPiar, 1) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    @endforeach
                 </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Sin PIAR</div>
-                    <div class="kpi-value">{{ $statistics->nonPiarCount }}</div>
-                    <div class="kpi-value-small">{{ $statistics->totalStudents > 0 ? round(($statistics->nonPiarCount / $statistics->totalStudents) * 100, 1) : 0 }}%</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Promedio Global</div>
-                    <div class="kpi-value">{{ number_format($statistics->globalAverage, 1) }}</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Desviación Estándar Global</div>
-                    <div class="kpi-value">{{ number_format($statistics->globalStdDev, 1) }}</div>
-                </div>
-            </div>
             </div>
         </div>
 
