@@ -412,7 +412,7 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
     {
         $studentIds = [];
         $zipIds = array_keys($uniqueStudents);
-        
+
         // Pre-cargar todos los estudiantes que tienen zipgrade_id en una sola consulta
         $existingStudents = Student::whereIn('zipgrade_id', $zipIds)->get()->keyBy('zipgrade_id');
 
@@ -420,16 +420,44 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
             if (isset($existingStudents[$zipgradeId])) {
                 $student = $existingStudents[$zipgradeId];
             } else {
-                // Si no existe, intentar por nombre como fallback
-                $student = Student::where('first_name', $data['first_name'])
+                // Si no existe, intentar por nombre SOLO si la coincidencia es única.
+                $nameMatches = Student::query()
+                    ->where('first_name', $data['first_name'])
                     ->where('last_name', $data['last_name'])
-                    ->first();
+                    ->limit(2)
+                    ->get();
 
-                if ($student) {
-                    $student->zipgrade_id = $zipgradeId;
-                    $student->save();
+                if ($nameMatches->count() === 1) {
+                    $candidate = $nameMatches->first();
+
+                    // Si el candidato ya tiene otro zipgrade_id, evitar enlazar mal.
+                    if (! empty($candidate->zipgrade_id) && $candidate->zipgrade_id !== $zipgradeId) {
+                        Log::warning('Zipgrade import - Candidate student has conflicting zipgrade_id', [
+                            'candidate_id' => $candidate->id,
+                            'candidate_zipgrade_id' => $candidate->zipgrade_id,
+                            'incoming_zipgrade_id' => $zipgradeId,
+                            'first_name' => $data['first_name'],
+                            'last_name' => $data['last_name'],
+                        ]);
+                        $student = null;
+                    } else {
+                        $candidate->zipgrade_id = $zipgradeId;
+                        $candidate->save();
+                        $student = $candidate;
+                    }
                 } else {
-                    // Si aún no existe, crear uno temporal
+                    if ($nameMatches->count() > 1) {
+                        Log::warning('Zipgrade import - Ambiguous student name, creating temporary student', [
+                            'incoming_zipgrade_id' => $zipgradeId,
+                            'first_name' => $data['first_name'],
+                            'last_name' => $data['last_name'],
+                        ]);
+                    }
+                    $student = null;
+                }
+
+                if (! $student) {
+                    // Si aún no existe, crear uno temporal (fallback seguro).
                     $tempCode = 'TEMP-'.strtoupper(uniqid());
                     $student = Student::create([
                         'code' => $tempCode,
@@ -507,13 +535,21 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
 
             // Insertar cada 500 para evitar límites de SQL
             if (count($inserts) >= 500) {
-                QuestionTag::insert($inserts);
+                QuestionTag::query()->upsert(
+                    $inserts,
+                    ['exam_question_id', 'tag_hierarchy_id'],
+                    ['inferred_area', 'updated_at']
+                );
                 $inserts = [];
             }
         }
 
         if (!empty($inserts)) {
-            QuestionTag::insert($inserts);
+            QuestionTag::query()->upsert(
+                $inserts,
+                ['exam_question_id', 'tag_hierarchy_id'],
+                ['inferred_area', 'updated_at']
+            );
         }
     }
 
@@ -560,13 +596,21 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
             ]);
 
             if (count($inserts) >= 500) {
-                StudentAnswer::insert($inserts);
+                StudentAnswer::query()->upsert(
+                    $inserts,
+                    ['exam_question_id', 'enrollment_id'],
+                    ['is_correct', 'updated_at']
+                );
                 $inserts = [];
             }
         }
 
         if (!empty($inserts)) {
-            StudentAnswer::insert($inserts);
+            StudentAnswer::query()->upsert(
+                $inserts,
+                ['exam_question_id', 'enrollment_id'],
+                ['is_correct', 'updated_at']
+            );
         }
     }
 
@@ -607,4 +651,3 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
         return count($this->newTags) > 0;
     }
 }
-

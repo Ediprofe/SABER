@@ -123,6 +123,12 @@ class ExamResource extends Resource
                     ->icon('heroicon-o-queue-list')
                     ->color('primary')
                     ->url(fn (Exam $record) => static::getUrl('pipeline', ['record' => $record])),
+                Tables\Actions\Action::make('open_results')
+                    ->label('Resultados')
+                    ->icon('heroicon-o-table-cells')
+                    ->color('success')
+                    ->visible(fn (Exam $record) => $record->hasSessions())
+                    ->url(fn (Exam $record) => static::getUrl('zipgrade-results', ['record' => $record])),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
                 Tables\Actions\Action::make('configure_areas')

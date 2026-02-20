@@ -44,7 +44,7 @@ class Pipeline extends Page
     }
 
     /**
-     * @return array{session:int, has_data:bool, has_completed_import:bool, has_stats:bool, total_questions:int}
+     * @return array{session:int, has_data:bool, has_completed_import:bool, has_tagged_questions:bool, has_stats:bool, total_questions:int}
      */
     public function getSessionStatus(int $sessionNumber): array
     {
@@ -58,13 +58,21 @@ class Pipeline extends Page
                 'session' => $sessionNumber,
                 'has_data' => false,
                 'has_completed_import' => false,
+                'has_tagged_questions' => false,
                 'has_stats' => false,
                 'total_questions' => 0,
             ];
         }
 
+        $totalQuestions = $session->questions()->count();
+
         $hasCompletedImport = $session->imports()
             ->where('status', 'completed')
+            ->exists();
+
+        $hasTaggedQuestions = ExamQuestion::query()
+            ->where('exam_session_id', $session->id)
+            ->whereHas('questionTags')
             ->exists();
 
         $hasStats = ExamQuestion::query()
@@ -74,10 +82,11 @@ class Pipeline extends Page
 
         return [
             'session' => $sessionNumber,
-            'has_data' => $session->total_questions > 0,
+            'has_data' => $totalQuestions > 0 || $session->total_questions > 0,
             'has_completed_import' => $hasCompletedImport,
+            'has_tagged_questions' => $hasTaggedQuestions,
             'has_stats' => $hasStats,
-            'total_questions' => (int) $session->total_questions,
+            'total_questions' => (int) $totalQuestions,
         ];
     }
 
@@ -89,7 +98,10 @@ class Pipeline extends Page
         $s1 = $this->getSessionStatus(1);
         $s2 = $this->getSessionStatus(2);
 
-        $tagsDone = $s1['has_completed_import'] && $s2['has_completed_import'];
+        $s1TagsReady = $s1['has_completed_import'] || $s1['has_tagged_questions'];
+        $s2TagsReady = $s2['has_completed_import'] || $s2['has_tagged_questions'];
+
+        $tagsDone = $s1TagsReady && $s2TagsReady;
         $statsDone = $s1['has_stats'] && $s2['has_stats'];
 
         return [

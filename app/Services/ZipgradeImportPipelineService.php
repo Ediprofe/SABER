@@ -9,6 +9,7 @@ use App\Models\ExamSession;
 use App\Models\ZipgradeImport;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
+use Maatwebsite\Excel\Imports\HeadingRowFormatter;
 
 class ZipgradeImportPipelineService
 {
@@ -117,9 +118,32 @@ class ZipgradeImportPipelineService
             throw new \RuntimeException('No se pudo encontrar el archivo: '.$filePath);
         }
 
-        $importClass = new ZipgradeQuestionStatsImport($session->id);
-        Excel::import($importClass, $filePath);
+        $import = ZipgradeImport::create([
+            'exam_session_id' => $session->id,
+            'filename' => 'stats_'.basename($filePath),
+            'total_rows' => 0,
+            'status' => 'processing',
+        ]);
 
-        return $importClass->getProcessedCount();
+        $importClass = new ZipgradeQuestionStatsImport($session->id);
+
+        try {
+            HeadingRowFormatter::default('zipgrade');
+            Excel::import($importClass, $filePath);
+
+            $processedCount = $importClass->getProcessedCount();
+
+            $import->update([
+                'status' => 'completed',
+                'total_rows' => $processedCount,
+            ]);
+
+            return $processedCount;
+        } catch (\Exception $e) {
+            $import->markAsError($e->getMessage());
+            throw $e;
+        } finally {
+            HeadingRowFormatter::reset();
+        }
     }
 }

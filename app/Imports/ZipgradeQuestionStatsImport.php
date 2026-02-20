@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
-use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Imports\HeadingRowFormatter;
 
 class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, WithHeadingRow
@@ -57,8 +56,6 @@ class ZipgradeQuestionStatsImport implements ToCollection, WithChunkReading, Wit
             return trim($value, '_');
         });
 
-        // Usar el formateador personalizado
-        HeadingRowFormatter::default('zipgrade');
     }
 
     public function chunkSize(): int
