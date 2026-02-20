@@ -32,6 +32,10 @@ class StudentResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Estudiantes';
 
+    protected static ?string $navigationGroup = 'Población';
+
+    protected static ?int $navigationSort = 10;
+
     public static function form(Form $form): Form
     {
         return $form
@@ -108,7 +112,7 @@ class StudentResource extends Resource
                             ->label('Estado')
                             ->options([
                                 'ACTIVE' => 'Activo',
-                                'INACTIVE' => 'Inactivo',
+                                'GRADUATED' => 'Graduado',
                             ])
                             ->default('ACTIVE')
                             ->required(),
@@ -184,7 +188,7 @@ class StudentResource extends Resource
                             'Grado',
                             'Grupo',
                             'PIAR (SI/NO)',
-                            'Estado (ACTIVE/INACTIVE)',
+                            'Estado (ACTIVE/GRADUATED)',
                         ];
 
                         // Set headers in first row

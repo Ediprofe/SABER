@@ -164,13 +164,21 @@ class StudentsImport implements ToCollection, WithHeadingRow
                 Log::info("Row {$rowNum}: PIAR processed='{$piarValue}', isPIAR=".($isPiarBoolean ? 'true' : 'false'));
 
                 // Create enrollment
+                $statusValue = strtoupper(trim($status ?? 'ACTIVE'));
+                if ($statusValue === 'INACTIVE') {
+                    $statusValue = 'GRADUATED';
+                }
+                if (! in_array($statusValue, ['ACTIVE', 'GRADUATED'], true)) {
+                    $statusValue = 'ACTIVE';
+                }
+
                 Enrollment::create([
                     'student_id' => $student->id,
                     'academic_year_id' => $academicYearModel->id,
                     'grade' => (int) $grade,
                     'group' => (string) $group,
                     'is_piar' => $isPiarBoolean,
-                    'status' => strtoupper(trim($status ?? 'ACTIVE')),
+                    'status' => $statusValue,
                 ]);
             }
 

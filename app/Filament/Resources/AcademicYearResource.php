@@ -22,6 +22,10 @@ class AcademicYearResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Años Académicos';
 
+    protected static ?string $navigationGroup = 'Población';
+
+    protected static ?int $navigationSort = 5;
+
     public static function form(Form $form): Form
     {
         return $form

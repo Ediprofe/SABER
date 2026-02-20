@@ -22,6 +22,8 @@ class TagHierarchyResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Jerarquía de Tags';
 
+    protected static ?string $navigationGroup = 'Configuración';
+
     protected static ?int $navigationSort = 50;
 
     public static function form(Form $form): Form

@@ -22,6 +22,8 @@ class ExamResultResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Resultados';
 
+    protected static bool $shouldRegisterNavigation = false;
+
     public static function form(Form $form): Form
     {
         return $form

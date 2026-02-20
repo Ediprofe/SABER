@@ -8,7 +8,7 @@ use App\Imports\ResultsImport;
 use App\Imports\ZipgradeTagsImport;
 use App\Models\Exam;
 use App\Models\ExamAreaConfig;
-use App\Models\ExamSession;
+use App\Services\ZipgradeImportPipelineService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -32,6 +32,10 @@ class ExamResource extends Resource
     protected static ?string $modelLabel = 'Examen';
 
     protected static ?string $pluralModelLabel = 'Exámenes';
+
+    protected static ?string $navigationGroup = 'Evaluaciones';
+
+    protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
     {
@@ -85,9 +89,17 @@ class ExamResource extends Resource
                     ->label('Fecha')
                     ->date('d/m/Y')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('examResults_count')
-                    ->label('Resultados')
-                    ->counts('examResults'),
+                Tables\Columns\TextColumn::make('zipgrade_pipeline')
+                    ->label('Pipeline Zipgrade')
+                    ->state(function (Exam $record): string {
+                        $completedSessions = $record->sessions()
+                            ->whereHas('imports', fn ($query) => $query->where('status', 'completed'))
+                            ->count();
+
+                        return "{$completedSessions}/2 sesiones";
+                    })
+                    ->badge()
+                    ->color(fn (string $state): string => str_starts_with($state, '2/') ? 'success' : 'warning'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
                     ->dateTime('d/m/Y H:i')
@@ -106,10 +118,15 @@ class ExamResource extends Resource
                     ]),
             ])
             ->actions([
+                Tables\Actions\Action::make('open_pipeline')
+                    ->label('Pipeline de Carga')
+                    ->icon('heroicon-o-queue-list')
+                    ->color('primary')
+                    ->url(fn (Exam $record) => static::getUrl('pipeline', ['record' => $record])),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
                 Tables\Actions\Action::make('configure_areas')
-                    ->label('Configurar Análisis Detallado')
+                    ->label('Configurar Dimensiones')
                     ->icon('heroicon-o-cog-6-tooth')
                     ->color('secondary')
                     ->modalHeading('Configurar Análisis Detallado')
@@ -229,6 +246,7 @@ class ExamResource extends Resource
                     ->label('Exportar Plantilla')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('warning')
+                    ->hidden()
                     ->form([
                         Forms\Components\Select::make('grade')
                             ->label('Grado')
@@ -277,6 +295,7 @@ class ExamResource extends Resource
                     ->label('Importar Resultados')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('success')
+                    ->hidden()
                     ->form([
                         Forms\Components\FileUpload::make('file')
                             ->label('Archivo Excel')
@@ -289,7 +308,7 @@ class ExamResource extends Resource
                     ->action(function (Exam $record, array $data): void {
                         try {
                             // Usar Storage para obtener el path correcto
-                            $filePath = \Illuminate\Support\Facades\Storage::disk('public')->path($data['file']);
+                            $filePath = Storage::disk('public')->path($data['file']);
 
                             if (! file_exists($filePath)) {
                                 Notification::make()
@@ -413,9 +432,10 @@ class ExamResource extends Resource
                         }
                     }),
                 Tables\Actions\Action::make('import_session1')
-                    ->label('Importar Sesión 1')
+                    ->label('Paso 1A: Importar Tags Sesión 1')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('success')
+                    ->hidden()
                     ->modalHeading('Importar Sesión 1')
                     ->modalDescription('Seleccione el archivo CSV de Zipgrade con los tags de la sesión 1. Si hay tags nuevos, se mostrará una pantalla para clasificarlos antes de completar la importación.')
                     ->modalSubmitActionLabel('Analizar y Continuar')
@@ -436,53 +456,13 @@ class ExamResource extends Resource
                             ->required()
                             ->helperText('Archivos CSV de hasta 10MB'),
                     ])
-                    ->action(function (Exam $record, array $data) {
-                        $filePath = Storage::disk('public')->path($data['file']);
-
-                        if (! file_exists($filePath)) {
-                            Notification::make()
-                                ->title('Archivo no encontrado')
-                                ->body('No se pudo acceder al archivo subido.')
-                                ->danger()
-                                ->send();
-
-                            return;
-                        }
-
-                        // Analizar el archivo para detectar tags nuevos
-                        try {
-                            $newTags = \App\Imports\ZipgradeTagsImport::analyzeFile($filePath);
-
-                            if (! empty($newTags)) {
-                                // Hay tags nuevos, redirigir a la página de clasificación
-                                // Codificar el path para pasarlo por la URL de forma segura
-                                $encodedPath = base64_encode($data['file']);
-
-                                return redirect()->to(
-                                    static::getUrl('classify-tags', [
-                                        'record' => $record,
-                                        'sessionNumber' => 1,
-                                        'filePath' => $encodedPath,
-                                    ])
-                                );
-                            }
-
-                            // No hay tags nuevos, proceder directamente con la importación
-                            return static::processZipgradeImport($record, 1, $filePath);
-
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Error al analizar archivo')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                    ->action(fn (Exam $record, array $data) => static::handleSessionTagsUpload($record, $data, 1)),
 
                 Tables\Actions\Action::make('import_session2')
-                    ->label('Importar Sesión 2')
+                    ->label('Paso 1B: Importar Tags Sesión 2')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('warning')
+                    ->hidden()
                     ->modalHeading('Importar Sesión 2')
                     ->modalDescription('Seleccione el archivo CSV de Zipgrade con los tags de la sesión 2. Si hay tags nuevos, se mostrará una pantalla para clasificarlos antes de completar la importación.')
                     ->modalSubmitActionLabel('Analizar y Continuar')
@@ -497,52 +477,13 @@ class ExamResource extends Resource
                             ->required()
                             ->helperText('Archivos CSV de hasta 20MB. Si tiene problemas, asegúrese de que el archivo tenga extensión .csv'),
                     ])
-                    ->action(function (Exam $record, array $data) {
-                        $filePath = Storage::disk('public')->path($data['file']);
-
-                        if (! file_exists($filePath)) {
-                            Notification::make()
-                                ->title('Archivo no encontrado')
-                                ->body('No se pudo acceder al archivo subido.')
-                                ->danger()
-                                ->send();
-
-                            return;
-                        }
-
-                        // Analizar el archivo para detectar tags nuevos
-                        try {
-                            $newTags = \App\Imports\ZipgradeTagsImport::analyzeFile($filePath);
-
-                            if (! empty($newTags)) {
-                                // Hay tags nuevos, redirigir a la página de clasificación
-                                $encodedPath = base64_encode($data['file']);
-
-                                return redirect()->to(
-                                    static::getUrl('classify-tags', [
-                                        'record' => $record,
-                                        'sessionNumber' => 2,
-                                        'filePath' => $encodedPath,
-                                    ])
-                                );
-                            }
-
-                            // No hay tags nuevos, proceder directamente con la importación
-                            return static::processZipgradeImport($record, 2, $filePath);
-
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Error al analizar archivo')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                    ->action(fn (Exam $record, array $data) => static::handleSessionTagsUpload($record, $data, 2)),
 
                 Tables\Actions\Action::make('import_session1_from_storage')
                     ->label('Importar Sesión 1 (desde Storage)')
                     ->icon('heroicon-o-folder-open')
                     ->color('warning')
+                    ->hidden()
                     ->form([
                         Forms\Components\TextInput::make('filename')
                             ->label('Nombre del archivo')
@@ -571,7 +512,7 @@ class ExamResource extends Resource
 
                         try {
                             // Analizar tags primero
-                            $newTags = \App\Imports\ZipgradeTagsImport::analyzeFile($filePath);
+                            $newTags = ZipgradeTagsImport::analyzeFile($filePath);
 
                             if (!empty($newTags)) {
                                 // Si hay tags nuevos, mostrar advertencia
@@ -586,8 +527,8 @@ class ExamResource extends Resource
                             }
 
                             // Importar directamente
-                            $import = new \App\Imports\ZipgradeTagsImport($session->id, []);
-                            \Maatwebsite\Excel\Facades\Excel::import($import, $filePath);
+                            $import = new ZipgradeTagsImport($session->id, []);
+                            Excel::import($import, $filePath);
 
                             // Actualizar contador
                             $questionCount = $session->questions()->count();
@@ -618,6 +559,7 @@ class ExamResource extends Resource
                     ->label('Importar Sesión 2 (desde Storage)')
                     ->icon('heroicon-o-folder-open')
                     ->color('warning')
+                    ->hidden()
                     ->form([
                         Forms\Components\TextInput::make('filename')
                             ->label('Nombre del archivo')
@@ -646,7 +588,7 @@ class ExamResource extends Resource
 
                         try {
                             // Analizar tags primero
-                            $newTags = \App\Imports\ZipgradeTagsImport::analyzeFile($filePath);
+                            $newTags = ZipgradeTagsImport::analyzeFile($filePath);
 
                             if (!empty($newTags)) {
                                 $tagNames = collect($newTags)->pluck('csv_name')->implode(', ');
@@ -660,8 +602,8 @@ class ExamResource extends Resource
                             }
 
                             // Importar directamente
-                            $import = new \App\Imports\ZipgradeTagsImport($session->id, []);
-                            \Maatwebsite\Excel\Facades\Excel::import($import, $filePath);
+                            $import = new ZipgradeTagsImport($session->id, []);
+                            Excel::import($import, $filePath);
 
                             // Actualizar contador
                             $questionCount = $session->questions()->count();
@@ -689,9 +631,10 @@ class ExamResource extends Resource
                     }),
 
                 Tables\Actions\Action::make('import_stats_session1')
-                    ->label('Importar Stats Sesión 1')
+                    ->label('Paso 2A: Importar Stats Sesión 1')
                     ->icon('heroicon-o-chart-bar')
                     ->color('info')
+                    ->hidden()
                     ->modalHeading('Importar Estadísticas Sesión 1')
                     ->modalDescription('Seleccione el archivo Excel con las estadísticas de Zipgrade para la sesión 1.')
                     ->modalSubmitActionLabel('Importar Stats')
@@ -708,34 +651,13 @@ class ExamResource extends Resource
                             ->visibility('private')
                             ->required(),
                     ])
-                    ->action(function (Exam $record, array $data) {
-                        try {
-                            $filePath = Storage::disk('public')->path($data['file']);
-
-                            if (! file_exists($filePath)) {
-                                Notification::make()
-                                    ->title('Archivo no encontrado')
-                                    ->body('No se pudo acceder al archivo subido.')
-                                    ->danger()
-                                    ->send();
-
-                                return;
-                            }
-
-                            return static::processZipgradeStatsImport($record, 1, $filePath);
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Error en la importación')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                    ->action(fn (Exam $record, array $data) => static::handleSessionStatsUpload($record, $data, 1)),
 
                 Tables\Actions\Action::make('import_stats_session2')
-                    ->label('Importar Stats Sesión 2')
+                    ->label('Paso 2B: Importar Stats Sesión 2')
                     ->icon('heroicon-o-chart-bar')
                     ->color('secondary')
+                    ->hidden()
                     ->modalHeading('Importar Estadísticas Sesión 2')
                     ->modalDescription('Seleccione el archivo Excel con las estadísticas de Zipgrade para la sesión 2.')
                     ->modalSubmitActionLabel('Importar Stats')
@@ -752,34 +674,13 @@ class ExamResource extends Resource
                             ->visibility('private')
                             ->required(),
                     ])
-                    ->action(function (Exam $record, array $data) {
-                        try {
-                            $filePath = Storage::disk('public')->path($data['file']);
-
-                            if (! file_exists($filePath)) {
-                                Notification::make()
-                                    ->title('Archivo no encontrado')
-                                    ->body('No se pudo acceder al archivo subido.')
-                                    ->danger()
-                                    ->send();
-
-                                return;
-                            }
-
-                            return static::processZipgradeStatsImport($record, 2, $filePath);
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Error en la importación')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                    ->action(fn (Exam $record, array $data) => static::handleSessionStatsUpload($record, $data, 2)),
 
                 Tables\Actions\Action::make('clear_session1')
                     ->label('Limpiar Sesión 1')
                     ->icon('heroicon-o-trash')
                     ->color('danger')
+                    ->hidden()
                     ->requiresConfirmation()
                     ->modalHeading('¿Limpiar datos de Sesión 1?')
                     ->modalDescription('Esto eliminará todas las preguntas, tags y respuestas de la Sesión 1. Los estudiantes y sus matrículas NO se eliminarán. Esta acción no se puede deshacer.')
@@ -827,6 +728,7 @@ class ExamResource extends Resource
                     ->label('Limpiar Sesión 2')
                     ->icon('heroicon-o-trash')
                     ->color('danger')
+                    ->hidden()
                     ->requiresConfirmation()
                     ->modalHeading('¿Limpiar datos de Sesión 2?')
                     ->modalDescription('Esto eliminará todas las preguntas, tags y respuestas de la Sesión 2. Los estudiantes y sus matrículas NO se eliminarán. Esta acción no se puede deshacer.')
@@ -874,6 +776,7 @@ class ExamResource extends Resource
                     ->label('Limpiar Todo')
                     ->icon('heroicon-o-trash')
                     ->color('danger')
+                    ->hidden()
                     ->requiresConfirmation()
                     ->modalHeading('¿Limpiar TODAS las sesiones?')
                     ->modalDescription('Esto eliminará TODAS las preguntas, tags y respuestas de AMBAS sesiones. Los estudiantes y sus matrículas NO se eliminarán. Esta acción no se puede deshacer.')
@@ -913,9 +816,10 @@ class ExamResource extends Resource
                     }),
 
                 Tables\Actions\Action::make('view_zipgrade_results')
-                    ->label('Ver Resultados Zipgrade')
+                    ->label('Paso 3: Ver Resultados y Reportes')
                     ->icon('heroicon-o-table-cells')
-                    ->color('primary')
+                    ->color('success')
+                    ->hidden()
                     ->visible(fn (Exam $record) => $record->hasSessions())
                     ->url(fn (Exam $record) => route('filament.admin.resources.exams.zipgrade-results', ['record' => $record])),
 
@@ -923,6 +827,7 @@ class ExamResource extends Resource
                     ->label('Generar Informe')
                     ->icon('heroicon-o-document-chart-bar')
                     ->color('info')
+                    ->hidden()
                     ->form([
                         Forms\Components\Select::make('grade')
                             ->label('Grado (opcional)')
@@ -971,44 +876,73 @@ class ExamResource extends Resource
             'index' => Pages\ListExams::route('/'),
             'create' => Pages\CreateExam::route('/create'),
             'edit' => Pages\EditExam::route('/{record}/edit'),
+            'pipeline' => Pages\Pipeline::route('/{record}/pipeline'),
             'zipgrade-results' => Pages\ZipgradeResults::route('/{record}/zipgrade-results'),
             'classify-tags' => Pages\ClassifyTags::route('/{record}/classify-tags/{sessionNumber}/{filePath}'),
         ];
     }
 
+    private static function handleSessionTagsUpload(Exam $record, array $data, int $sessionNumber): mixed
+    {
+        try {
+            $result = app(ZipgradeImportPipelineService::class)
+                ->importSessionTagsFromUploadedFile($record, $sessionNumber, $data['file']);
+
+            if ($result['needs_classification'] ?? false) {
+                return redirect()->to(
+                    static::getUrl('classify-tags', [
+                        'record' => $record,
+                        'sessionNumber' => $sessionNumber,
+                        'filePath' => $result['encoded_path'],
+                    ])
+                );
+            }
+
+            $imported = $result['imported'] ?? ['students_count' => 0, 'questions_count' => 0];
+
+            Notification::make()
+                ->title('Importación exitosa')
+                ->body("Se importaron {$imported['students_count']} estudiantes y {$imported['questions_count']} preguntas correctamente.")
+                ->success()
+                ->send();
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('Error en la importación')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        }
+
+        return null;
+    }
+
+    private static function handleSessionStatsUpload(Exam $record, array $data, int $sessionNumber): void
+    {
+        try {
+            $service = app(ZipgradeImportPipelineService::class);
+            $filePath = $service->getUploadedFilePath($data['file']);
+            static::processZipgradeStatsImport($record, $sessionNumber, $filePath);
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('Error en la importación')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        }
+    }
+
     /**
      * Procesa la importación de estadísticas de Zipgrade.
      */
-    private static function processZipgradeStatsImport(Exam $exam, int $sessionNumber, string $filePath): void
+    public static function processZipgradeStatsImport(Exam $exam, int $sessionNumber, string $filePath): void
     {
-        ini_set('max_execution_time', 300);
-        set_time_limit(300);
-
-        $session = ExamSession::where('exam_id', $exam->id)
-            ->where('session_number', $sessionNumber)
-            ->first();
-
-        if (! $session) {
-            Notification::make()
-                ->title('Sesión no encontrada')
-                ->body("La sesión {$sessionNumber} no existe. Importe los tags primero.")
-                ->danger()
-                ->send();
-
-            return;
-        }
-
         try {
-            if (! file_exists($filePath)) {
-                throw new \Exception('No se pudo encontrar el archivo: '.$filePath);
-            }
-
-            $importClass = new \App\Imports\ZipgradeQuestionStatsImport($session->id);
-            Excel::import($importClass, $filePath);
+            $processedCount = app(ZipgradeImportPipelineService::class)
+                ->processZipgradeStatsImport($exam, $sessionNumber, $filePath);
 
             Notification::make()
                 ->title('Importación de estadísticas exitosa')
-                ->body("Se importaron estadísticas para {$importClass->getProcessedCount()} preguntas de la sesión {$sessionNumber}.")
+                ->body("Se importaron estadísticas para {$processedCount} preguntas de la sesión {$sessionNumber}.")
                 ->success()
                 ->send();
 
@@ -1024,48 +958,18 @@ class ExamResource extends Resource
     /**
      * Procesa la importación de datos de Zipgrade.
      */
-    private static function processZipgradeImport(Exam $exam, int $sessionNumber, string $filePath): void
+    public static function processZipgradeImport(Exam $exam, int $sessionNumber, string $filePath): void
     {
-        // Increase execution time for large files
-        ini_set('max_execution_time', 300); // 5 minutes
-        set_time_limit(300);
-
-        $session = ExamSession::firstOrCreate(
-            ['exam_id' => $exam->id, 'session_number' => $sessionNumber],
-            ['name' => "Sesión {$sessionNumber}"]
-        );
-
-        // Create import record
-        $import = \App\Models\ZipgradeImport::create([
-            'exam_session_id' => $session->id,
-            'filename' => basename($filePath),
-            'total_rows' => 0,
-            'status' => 'processing',
-        ]);
-
         try {
-            if (! file_exists($filePath)) {
-                throw new \Exception('No se pudo encontrar el archivo: '.$filePath);
-            }
+            $imported = app(ZipgradeImportPipelineService::class)
+                ->processZipgradeImport($exam, $sessionNumber, $filePath);
 
-            // Process the import
-            $importClass = new ZipgradeTagsImport($session->id, []);
-            Excel::import($importClass, $filePath);
-
-            // Update session stats
-            $session->refresh();
-            $session->total_questions = $session->questions()->count();
-            $session->save();
-
-            // Mark import as completed
-            $import->update([
-                'status' => 'completed',
-                'total_rows' => $importClass->getRowCount(),
-            ]);
+            $newTags = $imported['new_tags'] ?? [];
+            $studentsCount = $imported['students_count'] ?? 0;
+            $questionsCount = $imported['questions_count'] ?? 0;
 
             // Check for new tags
-            if ($importClass->hasNewTags()) {
-                $newTags = $importClass->getNewTags();
+            if (! empty($newTags)) {
                 $tagList = implode(', ', array_slice($newTags, 0, 5));
                 if (count($newTags) > 5) {
                     $tagList .= ' y '.(count($newTags) - 5).' más...';
@@ -1073,21 +977,19 @@ class ExamResource extends Resource
 
                 Notification::make()
                     ->title('Importación completada con tags nuevos')
-                    ->body("Se importaron {$importClass->getStudentsCount()} estudiantes y {$session->total_questions} preguntas.\n\nTags nuevos detectados: {$tagList}\n\nPor favor, configure estos tags en el menú 'Jerarquía de Tags' antes de calcular resultados.")
+                    ->body("Se importaron {$studentsCount} estudiantes y {$questionsCount} preguntas.\n\nTags nuevos detectados: {$tagList}\n\nPor favor, configure estos tags en el menú 'Jerarquía de Tags' antes de calcular resultados.")
                     ->warning()
                     ->persistent()
                     ->send();
             } else {
                 Notification::make()
                     ->title('Importación exitosa')
-                    ->body("Se importaron {$importClass->getStudentsCount()} estudiantes y {$session->total_questions} preguntas correctamente.")
+                    ->body("Se importaron {$studentsCount} estudiantes y {$questionsCount} preguntas correctamente.")
                     ->success()
                     ->send();
             }
 
         } catch (\Exception $e) {
-            $import->markAsError($e->getMessage());
-
             Notification::make()
                 ->title('Error en la importación')
                 ->body($e->getMessage())
