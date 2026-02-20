@@ -135,6 +135,8 @@ class DatabaseSnapshotService
     ): string {
         $hash = hash_init('sha256');
         $page = 1;
+        $hashColumns = $columns;
+        sort($hashColumns);
 
         while (true) {
             $rows = DB::connection($connection)
@@ -149,9 +151,9 @@ class DatabaseSnapshotService
 
             foreach ($rows as $row) {
                 $normalized = [];
-                foreach ($columns as $column) {
+                foreach ($hashColumns as $column) {
                     $value = $row->{$column} ?? null;
-                    $normalized[$column] = is_bool($value) ? (int) $value : $value;
+                    $normalized[$column] = $this->normalizeValue($value, $column);
                 }
 
                 hash_update(
@@ -167,5 +169,69 @@ class DatabaseSnapshotService
         }
 
         return hash_final($hash);
+    }
+
+    private function normalizeValue(mixed $value, string $column): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_float($value)) {
+            return $this->normalizeNumericString((string) $value);
+        }
+
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return '';
+        }
+
+        // Numeric canonicalization to avoid driver formatting differences.
+        if (preg_match('/^-?\d+(?:\.\d+)?$/', $trimmed) === 1) {
+            return $this->normalizeNumericString($trimmed);
+        }
+
+        // SQLite may represent DATE as datetime at midnight.
+        if ($column === 'date' && preg_match('/^\d{4}-\d{2}-\d{2} 00:00:00(?:\.0+)?$/', $trimmed) === 1) {
+            return substr($trimmed, 0, 10);
+        }
+
+        // Normalize timestamp strings.
+        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/', $trimmed) === 1) {
+            $dateTime = \DateTime::createFromFormat('Y-m-d H:i:s.u', $trimmed)
+                ?: \DateTime::createFromFormat('Y-m-d H:i:s', $trimmed);
+
+            if ($dateTime instanceof \DateTimeInterface) {
+                return $dateTime->format('Y-m-d H:i:s');
+            }
+        }
+
+        return $trimmed;
+    }
+
+    private function normalizeNumericString(string $value): string
+    {
+        if (! str_contains($value, '.')) {
+            return ltrim($value, '+');
+        }
+
+        $value = rtrim(rtrim($value, '0'), '.');
+        if ($value === '-0') {
+            return '0';
+        }
+
+        return ltrim($value, '+');
     }
 }
