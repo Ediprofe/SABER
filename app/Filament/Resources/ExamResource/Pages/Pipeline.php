@@ -9,13 +9,11 @@ use App\Jobs\SendStudentReportsEmailJob;
 use App\Models\Enrollment;
 use App\Models\Exam;
 use App\Models\ReportGeneration;
-use App\Services\ZipgradeImportPipelineService;
 use App\Services\ZipgradeMetricsService;
 use App\Services\ZipgradePipelineStatusService;
 use App\Services\ZipgradePdfService;
 use App\Services\ZipgradeReportGenerator;
 use Filament\Actions\Action;
-use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Maatwebsite\Excel\Facades\Excel;
@@ -40,7 +38,7 @@ class Pipeline extends Page
 
     public function getSubheading(): ?string
     {
-        return 'Sigue los pasos en orden: Tags de sesiones, Stats y luego resultados/reportes.';
+        return 'Carga por sesión: primero Blueprint + Respuestas, luego revisa resultados y exportaciones.';
     }
 
     /**
@@ -140,48 +138,8 @@ class Pipeline extends Page
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('import_tags_session1')
-                ->label('Paso 1A: Tags Sesión 1')
-                ->icon('heroicon-o-arrow-up-tray')
-                ->color('success')
-                ->form($this->getTagsUploadFormSchema())
-                ->action(fn (array $data) => $this->handleTagsImport(1, $data)),
-
-            Action::make('import_tags_session2')
-                ->label('Paso 1B: Tags Sesión 2')
-                ->icon('heroicon-o-arrow-up-tray')
-                ->color('warning')
-                ->form($this->getTagsUploadFormSchema())
-                ->action(fn (array $data) => $this->handleTagsImport(2, $data)),
-
-            Action::make('import_stats_session1')
-                ->label('Paso 2A: Stats Sesión 1')
-                ->icon('heroicon-o-chart-bar')
-                ->color('info')
-                ->form($this->getStatsUploadFormSchema())
-                ->visible(fn (): bool => $this->record->sessions()->where('session_number', 1)->exists())
-                ->action(fn (array $data) => $this->handleStatsImport(1, $data)),
-
-            Action::make('import_stats_session2')
-                ->label('Paso 2B: Stats Sesión 2')
-                ->icon('heroicon-o-chart-bar')
-                ->color('secondary')
-                ->form($this->getStatsUploadFormSchema())
-                ->visible(fn (): bool => $this->record->sessions()->where('session_number', 2)->exists())
-                ->action(fn (array $data) => $this->handleStatsImport(2, $data)),
-
-            Action::make('open_results')
-                ->label('Paso 3: Resultados y Reportes')
-                ->icon('heroicon-o-table-cells')
-                ->color('primary')
-                ->visible(fn (): bool => $this->record->hasSessions())
-                ->url(fn (): string => ExamResource::getUrl('zipgrade-results', ['record' => $this->record])),
-
             Action::make('download_excel')
-                ->label('Descargar Excel')
-                ->icon('heroicon-o-document-chart-bar')
-                ->color('success')
-                ->visible(fn (): bool => $this->record->hasSessions())
+                ->hidden()
                 ->action(function () {
                     $export = new ZipgradeResultsExport($this->record, null, null);
                     $filename = 'resultados_zipgrade_'.str_replace(' ', '_', strtolower($this->record->name)).'_'.now()->format('Y-m-d').'.xlsx';
@@ -190,10 +148,7 @@ class Pipeline extends Page
                 }),
 
             Action::make('download_pdf')
-                ->label('Descargar PDF')
-                ->icon('heroicon-o-document-text')
-                ->color('warning')
-                ->visible(fn (): bool => $this->record->hasSessions())
+                ->hidden()
                 ->action(function () {
                     $pdfService = app(ZipgradePdfService::class);
                     $filename = $pdfService->getFilename($this->record);
@@ -206,10 +161,7 @@ class Pipeline extends Page
                 }),
 
             Action::make('download_html')
-                ->label('Descargar HTML')
-                ->icon('heroicon-o-code-bracket')
-                ->color('info')
-                ->visible(fn (): bool => $this->record->hasSessions())
+                ->hidden()
                 ->action(function () {
                     $generator = app(ZipgradeReportGenerator::class);
                     $filename = $generator->getReportFilename($this->record, null);
@@ -222,11 +174,8 @@ class Pipeline extends Page
                 }),
 
             Action::make('generate_individual_reports')
-                ->label('Generar ZIP Individuales')
-                ->icon('heroicon-o-document-arrow-down')
-                ->color('success')
+                ->hidden()
                 ->requiresConfirmation()
-                ->visible(fn (): bool => $this->record->hasSessions())
                 ->modalHeading('Generar Informes PDF Individuales')
                 ->modalDescription(function () {
                     $count = app(ZipgradeMetricsService::class)->getEnrollmentsForExam($this->record)->count();
@@ -268,11 +217,7 @@ class Pipeline extends Page
                 }),
 
             Action::make('download_individual_reports')
-                ->label(fn (): string => $this->getIndividualReportsStatus()['download_label'])
-                ->icon('heroicon-o-arrow-down-tray')
-                ->color(fn (): string => $this->getIndividualReportsStatus()['color'])
-                ->visible(fn (): bool => $this->record->hasSessions())
-                ->disabled(fn (): bool => ! $this->getIndividualReportsStatus()['can_download'])
+                ->hidden()
                 ->action(function () {
                     $generation = $this->getCompletedIndividualReportsGeneration();
 
@@ -300,11 +245,8 @@ class Pipeline extends Page
                 }),
 
             Action::make('send_reports_email')
-                ->label('Enviar Reportes por Email')
-                ->icon('heroicon-o-envelope')
-                ->color('secondary')
+                ->hidden()
                 ->requiresConfirmation()
-                ->visible(fn (): bool => $this->record->hasSessions())
                 ->modalHeading('Enviar Reportes por Email')
                 ->modalDescription(function () {
                     $coverage = $this->getEmailCoverage();
@@ -349,103 +291,6 @@ class Pipeline extends Page
                 ->color('gray')
                 ->url(fn (): string => ExamResource::getUrl('index')),
         ];
-    }
-
-    /**
-     * @return array<Forms\Components\Component>
-     */
-    private function getTagsUploadFormSchema(): array
-    {
-        return [
-            Forms\Components\FileUpload::make('file')
-                ->label('Archivo CSV de Zipgrade (Tags)')
-                ->acceptedFileTypes([
-                    'text/csv',
-                    'text/plain',
-                    'application/vnd.ms-excel',
-                    'application/csv',
-                    'application/x-csv',
-                ])
-                ->disk('public')
-                ->directory('zipgrade_imports')
-                ->visibility('private')
-                ->maxSize(20480)
-                ->required(),
-        ];
-    }
-
-    /**
-     * @return array<Forms\Components\Component>
-     */
-    private function getStatsUploadFormSchema(): array
-    {
-        return [
-            Forms\Components\FileUpload::make('file')
-                ->label('Archivo Excel de Estadísticas')
-                ->acceptedFileTypes([
-                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    'application/vnd.ms-excel',
-                ])
-                ->disk('public')
-                ->directory('zipgrade_imports')
-                ->visibility('private')
-                ->required(),
-        ];
-    }
-
-    private function handleTagsImport(int $sessionNumber, array $data): mixed
-    {
-        try {
-            $result = app(ZipgradeImportPipelineService::class)
-                ->importSessionTagsFromUploadedFile($this->record, $sessionNumber, $data['file']);
-
-            if ($result['needs_classification'] ?? false) {
-                return redirect()->to(
-                    ExamResource::getUrl('classify-tags', [
-                        'record' => $this->record,
-                        'sessionNumber' => $sessionNumber,
-                        'filePath' => $result['encoded_path'],
-                    ])
-                );
-            }
-
-            $imported = $result['imported'] ?? ['students_count' => 0, 'questions_count' => 0];
-
-            Notification::make()
-                ->title('Importación exitosa')
-                ->body("Se importaron {$imported['students_count']} estudiantes y {$imported['questions_count']} preguntas correctamente.")
-                ->success()
-                ->send();
-        } catch (\Exception $e) {
-            Notification::make()
-                ->title('Error en la importación')
-                ->body($e->getMessage())
-                ->danger()
-                ->send();
-        }
-
-        return null;
-    }
-
-    private function handleStatsImport(int $sessionNumber, array $data): void
-    {
-        try {
-            $service = app(ZipgradeImportPipelineService::class);
-            $filePath = $service->getUploadedFilePath($data['file']);
-            $processedCount = $service->processZipgradeStatsImport($this->record, $sessionNumber, $filePath);
-
-            Notification::make()
-                ->title('Importación de estadísticas exitosa')
-                ->body("Se importaron estadísticas para {$processedCount} preguntas de la sesión {$sessionNumber}.")
-                ->success()
-                ->send();
-        } catch (\Exception $e) {
-            Notification::make()
-                ->title('Error en la importación')
-                ->body($e->getMessage())
-                ->danger()
-                ->send();
-        }
     }
 
     private function getEnrollmentsForExamQuery()

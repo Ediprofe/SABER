@@ -2,17 +2,38 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Str;
+
 class AreaConfig
 {
     /**
      * Mapeo de claves de área a posibles nombres en tags.
      */
     public const AREA_MAPPINGS = [
-        'lectura' => ['Lectura', 'Lectura Crítica', 'Lectura critica', 'lectura', 'Lectura critica'],
-        'matematicas' => ['Matemáticas', 'matematicas', 'Matemática', 'Mat'],
-        'sociales' => ['Sociales', 'Ciencias Sociales', 'ciencias sociales', 'sociales', 'Social'],
-        'naturales' => ['Ciencias', 'Naturales', 'Ciencias Naturales', 'ciencias naturales', 'naturales'],
-        'ingles' => ['Inglés', 'Ingles', 'ingles', 'English'],
+        'lectura' => [
+            'Lectura',
+            'Lectura Critica',
+            'Lectura Crítica',
+        ],
+        'matematicas' => [
+            'Matematicas',
+            'Matemáticas',
+            'Matematica',
+            'Matemática',
+        ],
+        'sociales' => [
+            'Sociales',
+            'Ciencias Sociales',
+        ],
+        'naturales' => [
+            'Naturales',
+            'Ciencias Naturales',
+        ],
+        'ingles' => [
+            'Ingles',
+            'Inglés',
+            'English',
+        ],
     ];
 
     /**
@@ -42,11 +63,16 @@ class AreaConfig
      */
     public static function normalizeAreaName(string $tagName): ?string
     {
+        $normalizedInput = self::normalized($tagName);
+
         foreach (self::AREA_MAPPINGS as $key => $names) {
-            if (in_array($tagName, $names, true)) {
-                return $key;
+            foreach ($names as $name) {
+                if (self::normalized($name) === $normalizedInput) {
+                    return $key;
+                }
             }
         }
+
         return null;
     }
 
@@ -72,5 +98,15 @@ class AreaConfig
     public static function allKeys(): array
     {
         return array_keys(self::AREA_MAPPINGS);
+    }
+
+    private static function normalized(string $value): string
+    {
+        return Str::of($value)
+            ->ascii()
+            ->lower()
+            ->replaceMatches('/\s+/', ' ')
+            ->trim()
+            ->toString();
     }
 }

@@ -36,7 +36,7 @@ class ZipgradePipelineStatusServiceTest extends TestCase
         $this->assertTrue($pipeline['ready']);
     }
 
-    public function test_pipeline_is_not_ready_when_stats_are_missing(): void
+    public function test_pipeline_can_be_ready_when_stats_are_missing_but_tags_are_complete(): void
     {
         $fixture = $this->createTwoSessionExamFixture([
             'with_stats' => false,
@@ -48,7 +48,7 @@ class ZipgradePipelineStatusServiceTest extends TestCase
 
         $this->assertTrue($pipeline['tags_done']);
         $this->assertFalse($pipeline['stats_done']);
-        $this->assertFalse($pipeline['ready']);
+        $this->assertTrue($pipeline['ready']);
     }
 
     public function test_global_score_matches_weighted_formula_regression_case(): void
@@ -64,4 +64,3 @@ class ZipgradePipelineStatusServiceTest extends TestCase
         $this->assertSame(269, $globalScore);
     }
 }
-

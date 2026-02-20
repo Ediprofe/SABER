@@ -59,20 +59,20 @@ class ZipgradePipelineStatusService
      */
     public function getPipelineStatus(Exam $exam): array
     {
-        $s1 = $this->getSessionStatus($exam, 1);
-        $s2 = $this->getSessionStatus($exam, 2);
+        $configuredSessions = $exam->getConfiguredSessionNumbers();
+        $tagsDone = true;
+        $statsDone = true;
 
-        $s1TagsReady = $s1['has_completed_import'] || $s1['has_tagged_questions'];
-        $s2TagsReady = $s2['has_completed_import'] || $s2['has_tagged_questions'];
-
-        $tagsDone = $s1TagsReady && $s2TagsReady;
-        $statsDone = $s1['has_stats'] && $s2['has_stats'];
+        foreach ($configuredSessions as $sessionNumber) {
+            $status = $this->getSessionStatus($exam, $sessionNumber);
+            $tagsDone = $tagsDone && ($status['has_completed_import'] || $status['has_tagged_questions']);
+            $statsDone = $statsDone && $status['has_stats'];
+        }
 
         return [
-            'ready' => $tagsDone && $statsDone,
+            'ready' => $tagsDone,
             'tags_done' => $tagsDone,
             'stats_done' => $statsDone,
         ];
     }
 }
-

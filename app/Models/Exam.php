@@ -16,11 +16,13 @@ class Exam extends Model
         'name',
         'type',
         'date',
+        'sessions_count',
     ];
 
     protected $casts = [
         'type' => 'string',
         'date' => 'date',
+        'sessions_count' => 'integer',
     ];
 
     public function academicYear(): BelongsTo
@@ -51,6 +53,13 @@ class Exam extends Model
     public function hasSessions(): bool
     {
         return $this->sessions()->exists();
+    }
+
+    public function getConfiguredSessionNumbers(): array
+    {
+        $count = max(1, min(2, (int) ($this->sessions_count ?: 2)));
+
+        return range(1, $count);
     }
 
     /**

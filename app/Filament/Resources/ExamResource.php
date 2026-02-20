@@ -60,6 +60,14 @@ class ExamResource extends Resource
                 Forms\Components\DatePicker::make('date')
                     ->label('Fecha')
                     ->required(),
+                Forms\Components\Select::make('sessions_count')
+                    ->label('Número de sesiones')
+                    ->options([
+                        1 => '1 sesión',
+                        2 => '2 sesiones',
+                    ])
+                    ->default(2)
+                    ->required(),
             ]);
     }
 
@@ -96,10 +104,16 @@ class ExamResource extends Resource
                             ->whereHas('imports', fn ($query) => $query->where('status', 'completed'))
                             ->count();
 
-                        return "{$completedSessions}/2 sesiones";
+                        $totalSessions = count($record->getConfiguredSessionNumbers());
+
+                        return "{$completedSessions}/{$totalSessions} sesiones";
                     })
                     ->badge()
-                    ->color(fn (string $state): string => str_starts_with($state, '2/') ? 'success' : 'warning'),
+                    ->color(function (string $state): string {
+                        [$completed, $total] = explode('/', str_replace(' sesiones', '', $state));
+
+                        return ((int) $completed) >= ((int) $total) ? 'success' : 'warning';
+                    }),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
                     ->dateTime('d/m/Y H:i')
@@ -458,9 +472,8 @@ class ExamResource extends Resource
                             ->disk('public')
                             ->directory('zipgrade_imports')
                             ->visibility('private')
-                            ->maxSize(10240) // 10MB
                             ->required()
-                            ->helperText('Archivos CSV de hasta 10MB'),
+                            ->helperText('Espera a que termine la carga del archivo antes de presionar Analizar y Continuar.'),
                     ])
                     ->action(fn (Exam $record, array $data) => static::handleSessionTagsUpload($record, $data, 1)),
 
@@ -479,9 +492,8 @@ class ExamResource extends Resource
                             ->disk('public')
                             ->directory('zipgrade_imports')
                             ->visibility('private')
-                            ->maxSize(20480) // 20MB
                             ->required()
-                            ->helperText('Archivos CSV de hasta 20MB. Si tiene problemas, asegúrese de que el archivo tenga extensión .csv'),
+                            ->helperText('Espera a que termine la carga del archivo antes de presionar Analizar y Continuar.'),
                     ])
                     ->action(fn (Exam $record, array $data) => static::handleSessionTagsUpload($record, $data, 2)),
 
@@ -883,6 +895,8 @@ class ExamResource extends Resource
             'create' => Pages\CreateExam::route('/create'),
             'edit' => Pages\EditExam::route('/{record}/edit'),
             'pipeline' => Pages\Pipeline::route('/{record}/pipeline'),
+            'upload' => Pages\Upload::route('/{record}/pipeline/upload/{sessionNumber}'),
+            'pipeline-preview' => Pages\PipelinePreview::route('/{record}/pipeline/preview/{sessionNumber}/{token}'),
             'zipgrade-results' => Pages\ZipgradeResults::route('/{record}/zipgrade-results'),
             'classify-tags' => Pages\ClassifyTags::route('/{record}/classify-tags/{sessionNumber}/{filePath}'),
         ];

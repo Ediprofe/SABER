@@ -178,4 +178,104 @@ class ZipgradeImportPipelineServiceTest extends TestCase
             HeadingRowFormatter::reset();
         }
     }
+
+    public function test_tags_import_handles_large_csv_without_memory_exhaustion(): void
+    {
+        $year = AcademicYear::create(['year' => 2026]);
+        $exam = Exam::create([
+            'academic_year_id' => $year->id,
+            'name' => 'Simulacro Archivo Grande',
+            'type' => 'SIMULACRO',
+            'date' => '2026-02-20',
+        ]);
+
+        TagHierarchy::create([
+            'tag_name' => 'Lectura',
+            'tag_type' => 'area',
+            'parent_area' => null,
+        ]);
+
+        $students = 120;
+        $questions = 40;
+        $rowsTotal = 22000;
+
+        for ($i = 1; $i <= $students; $i++) {
+            $student = Student::create([
+                'code' => "STU-LARGE-{$i}",
+                'document_id' => "90{$i}",
+                'zipgrade_id' => "ZG-LARGE-{$i}",
+                'first_name' => "Nombre{$i}",
+                'last_name' => "Apellido{$i}",
+            ]);
+
+            Enrollment::create([
+                'student_id' => $student->id,
+                'academic_year_id' => $year->id,
+                'grade' => 11,
+                'group' => '11-1',
+                'is_piar' => false,
+                'status' => 'ACTIVE',
+            ]);
+        }
+
+        $directory = storage_path('framework/testing/zipgrade');
+        if (! is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+
+        $filePath = $directory.'/'.uniqid('zipgrade_large_', true).'.csv';
+        $handle = fopen($filePath, 'wb');
+        if (! $handle) {
+            $this->fail('No se pudo crear archivo temporal CSV para prueba de volumen.');
+        }
+
+        fputcsv($handle, [
+            'StudentID',
+            'StudentFirstName',
+            'StudentLastName',
+            'QuestionNumber',
+            'Tag',
+            'EarnedPoints',
+            'QuizName',
+        ]);
+
+        for ($i = 0; $i < $rowsTotal; $i++) {
+            $studentNumber = ($i % $students) + 1;
+            $questionNumber = ($i % $questions) + 1;
+            $earnedPoints = $i % 3 === 0 ? 0 : 1;
+
+            fputcsv($handle, [
+                "ZG-LARGE-{$studentNumber}",
+                "Nombre{$studentNumber}",
+                "Apellido{$studentNumber}",
+                $questionNumber,
+                'Lectura',
+                $earnedPoints,
+                'S1',
+            ]);
+        }
+        fclose($handle);
+
+        try {
+            $result = app(ZipgradeImportPipelineService::class)
+                ->processZipgradeImport($exam, 1, $filePath);
+
+            $session = ExamSession::where('exam_id', $exam->id)
+                ->where('session_number', 1)
+                ->firstOrFail();
+
+            $this->assertSame($students, $result['students_count']);
+            $this->assertSame($questions, $result['questions_count']);
+            $this->assertSame($questions, $session->questions()->count());
+
+            $import = ZipgradeImport::where('exam_session_id', $session->id)
+                ->latest()
+                ->firstOrFail();
+
+            $this->assertSame('completed', $import->status);
+            $this->assertSame($rowsTotal, $import->total_rows);
+        } finally {
+            @unlink($filePath);
+        }
+    }
 }

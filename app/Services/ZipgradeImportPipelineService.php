@@ -58,6 +58,7 @@ class ZipgradeImportPipelineService
      */
     public function processZipgradeImport(Exam $exam, int $sessionNumber, string $filePath): array
     {
+        ini_set('memory_limit', '512M');
         ini_set('max_execution_time', '300');
         set_time_limit(300);
 
@@ -103,6 +104,7 @@ class ZipgradeImportPipelineService
 
     public function processZipgradeStatsImport(Exam $exam, int $sessionNumber, string $filePath): int
     {
+        ini_set('memory_limit', '512M');
         ini_set('max_execution_time', '300');
         set_time_limit(300);
 

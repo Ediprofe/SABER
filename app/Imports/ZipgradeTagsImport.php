@@ -13,9 +13,10 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\ToCollection;
+use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 
-class ZipgradeTagsImport implements ToCollection, WithHeadingRow
+class ZipgradeTagsImport implements ToCollection, WithChunkReading, WithHeadingRow
 {
     private int $examSessionId;
 
@@ -34,6 +35,8 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
     private array $enrollmentCache = [];
 
     private ?ExamSession $session = null;
+
+    private int $processedRowsCount = 0;
 
     public function __construct(int $examSessionId, array $tagMappings = [])
     {
@@ -204,24 +207,28 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
 
     public function collection(Collection $rows)
     {
-        $this->rowCount = $rows->count();
+        $chunkRowCount = $rows->count();
+        $this->rowCount += $chunkRowCount;
 
-        if ($this->rowCount > 0) {
+        if ($chunkRowCount > 0) {
             $sampleRow = $rows->first();
             Log::info('Zipgrade import - Start processing', [
-                'rows' => $this->rowCount,
+                'rows_in_chunk' => $chunkRowCount,
                 'keys' => array_keys($sampleRow->toArray()),
                 'session_id' => $this->examSessionId,
             ]);
         }
 
-        if ($this->rowCount === 0) {
+        if ($chunkRowCount === 0) {
             Log::warning('Zipgrade import - No rows to process', ['session_id' => $this->examSessionId]);
             return;
         }
 
-        // Cargar sesión y examen una sola vez
-        $this->session = ExamSession::with('exam')->find($this->examSessionId);
+        // Cargar sesión y examen una sola vez durante todo el import
+        if (! $this->session) {
+            $this->session = ExamSession::with('exam')->find($this->examSessionId);
+        }
+
         if (!$this->session || !$this->session->exam) {
             throw new \Exception("Sesión o examen no encontrado.");
         }
@@ -234,6 +241,7 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
             $uniqueTags = [];
             $answers = [];
             $processedRows = 0;
+            $firstQuizName = null;
 
             foreach ($rows as $index => $row) {
                 $earnedPoints = (float) str_replace(',', '.', $row['EarnedPoints'] ?? $row['earnedpoints'] ?? $row['earned_points'] ?? '0');
@@ -249,6 +257,7 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
                 }
 
                 $processedRows++;
+                $firstQuizName ??= $quizName;
 
                 if (!isset($uniqueStudents[$studentId])) {
                     $uniqueStudents[$studentId] = [
@@ -294,17 +303,19 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
             // --- OPTIMIZACIÓN: Student Answers en lote ---
             $this->createStudentAnswersBulk($answers, $questionIds, $studentIds);
 
-            if ($this->session && !empty($answers)) {
-                $this->session->zipgrade_quiz_name = $answers[0]['quiz_name'] ?? null;
+            if ($this->session && !empty($firstQuizName) && empty($this->session->zipgrade_quiz_name)) {
+                $this->session->zipgrade_quiz_name = $firstQuizName;
                 $this->session->save();
             }
 
             DB::commit();
+            $this->processedRowsCount += $processedRows;
 
             Log::info('Zipgrade import completed', [
                 'session_id' => $this->examSessionId,
                 'rows_total' => $this->rowCount,
                 'rows_processed' => $processedRows,
+                'rows_processed_total' => $this->processedRowsCount,
                 'students_count' => count($uniqueStudents),
                 'questions_count' => count($uniqueQuestions),
             ]);
@@ -324,12 +335,29 @@ class ZipgradeTagsImport implements ToCollection, WithHeadingRow
      */
     private function detectNewTags(array $uniqueTags): void
     {
-        foreach ($uniqueTags as $tagName) {
-            $exists = TagHierarchy::where('tag_name', $tagName)->exists();
-            if (! $exists) {
+        if ($uniqueTags === []) {
+            return;
+        }
+
+        $tagNames = array_values($uniqueTags);
+
+        $existingTags = TagHierarchy::query()
+            ->whereIn('tag_name', $tagNames)
+            ->pluck('tag_name')
+            ->all();
+
+        $existingLookup = array_fill_keys($existingTags, true);
+
+        foreach ($tagNames as $tagName) {
+            if (! isset($existingLookup[$tagName]) && ! in_array($tagName, $this->newTags, true)) {
                 $this->newTags[] = $tagName;
             }
         }
+    }
+
+    public function chunkSize(): int
+    {
+        return 1000;
     }
 
     /**
