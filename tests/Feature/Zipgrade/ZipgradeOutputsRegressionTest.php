@@ -3,6 +3,7 @@
 namespace Tests\Feature\Zipgrade;
 
 use App\Exports\ZipgradeResultsExport;
+use App\Services\IndividualStudentPdfService;
 use App\Services\ZipgradePdfService;
 use App\Services\ZipgradeReportGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,5 +36,20 @@ class ZipgradeOutputsRegressionTest extends TestCase
         $this->assertGreaterThan(1000, strlen($xlsx));
         $this->assertStringStartsWith('PK', $xlsx);
     }
-}
 
+    public function test_individual_student_pdf_is_generated_for_enrollment(): void
+    {
+        $fixture = $this->createTwoSessionExamFixture([
+            'with_stats' => true,
+            'with_imports' => false,
+        ]);
+
+        $exam = $fixture['exam'];
+        $enrollment = $fixture['enrollment'];
+
+        $pdf = app(IndividualStudentPdfService::class)->generatePdf($enrollment, $exam);
+
+        $this->assertGreaterThan(1000, strlen($pdf));
+        $this->assertStringStartsWith('%PDF', $pdf);
+    }
+}

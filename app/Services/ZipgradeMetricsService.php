@@ -79,8 +79,9 @@ class ZipgradeMetricsService
                     ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
                     ->whereIn('exam_questions.exam_session_id', $sessionIds)
                     ->where(function ($query) use ($areaTag, $area) {
+                        $areaValues = $this->resolveAreaFilterValues($area, $areaTag);
                         $query->where('question_tags.tag_hierarchy_id', $areaTag->id)
-                            ->orWhere('question_tags.inferred_area', $area);
+                            ->orWhereIn('question_tags.inferred_area', $areaValues);
                     })
                     ->distinct()
                     ->pluck('exam_questions.id');
@@ -445,6 +446,7 @@ class ZipgradeMetricsService
         // Determinar qué tipo de tags buscar según el área y dimensión
         $tagTypes = match ([$area, $dimension]) {
             ['ingles', 1] => ['parte'],
+            ['ingles', 2] => ['competencia'],
             ['lectura', 2] => ['tipo_texto'],
             ['lectura', 3] => ['nivel_lectura'],
             default => match ($dimension) {
@@ -462,15 +464,15 @@ class ZipgradeMetricsService
         }
 
         // Obtener tags directamente desde las preguntas del examen
-        $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, $tagTypes);
+        $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, $tagTypes, $area);
 
-        // Si no hay tags en preguntas, buscar en tag_hierarchy
+        // Fallback defensivo: buscar en jerarquía del área (sin incluir huérfanos globales),
+        // para evitar contaminar dimensiones con tags de otras áreas.
         if ($tags->isEmpty()) {
             $tags = TagHierarchy::whereIn('tag_type', $tagTypes)
-                ->where(function ($query) use ($areaTag) {
-                    $query->where('parent_area', $areaTag->tag_name)
-                        ->orWhereNull('parent_area');
-                })
+                ->where('parent_area', $areaTag->tag_name)
+                ->whereNotNull('tag_name')
+                ->where('tag_name', '!=', '')
                 ->get();
         }
 
@@ -563,6 +565,7 @@ class ZipgradeMetricsService
         // Determinar qué tipo de tags buscar
         $tagTypes = match ([$area, $dimension]) {
             ['ingles', 1] => ['parte'],
+            ['ingles', 2] => ['competencia'],
             ['lectura', 2] => ['tipo_texto'],
             ['lectura', 3] => ['nivel_lectura'],
             default => match ($dimension) {
@@ -577,14 +580,13 @@ class ZipgradeMetricsService
             return [];
         }
 
-        $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, $tagTypes);
+        $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, $tagTypes, $area);
 
         if ($tags->isEmpty()) {
             $tags = TagHierarchy::whereIn('tag_type', $tagTypes)
-                ->where(function ($query) use ($areaTag) {
-                    $query->where('parent_area', $areaTag->tag_name)
-                        ->orWhereNull('parent_area');
-                })
+                ->where('parent_area', $areaTag->tag_name)
+                ->whereNotNull('tag_name')
+                ->where('tag_name', '!=', '')
                 ->get();
         }
 
@@ -690,12 +692,13 @@ class ZipgradeMetricsService
     /**
      * Busca tags desde las preguntas cuando no están configurados explícitamente.
      */
-    private function findTagsFromQuestions(array $sessionIds, TagHierarchy $areaTag, array $tagTypes): Collection
+    private function findTagsFromQuestions(array $sessionIds, TagHierarchy $areaTag, array $tagTypes, ?string $areaKey = null): Collection
     {
         // Para competencias: buscar por inferred_area en question_tags
         // Para componentes/parte: buscar por parent_area en tag_hierarchy
 
         $tagIds = collect();
+        $areaValues = $this->resolveAreaFilterValues($areaKey, $areaTag);
 
         // Buscar por inferred_area (competencias)
         $idsFromInferred = DB::table('exam_questions')
@@ -703,7 +706,7 @@ class ZipgradeMetricsService
             ->join('tag_hierarchy', 'question_tags.tag_hierarchy_id', '=', 'tag_hierarchy.id')
             ->whereIn('exam_questions.exam_session_id', $sessionIds)
             ->whereIn('tag_hierarchy.tag_type', $tagTypes)
-            ->where('question_tags.inferred_area', $areaTag->tag_name)
+            ->whereIn('question_tags.inferred_area', $areaValues)
             ->distinct()
             ->pluck('tag_hierarchy.id');
 
@@ -747,21 +750,20 @@ class ZipgradeMetricsService
         // Determinar tipos de tags según el área
         $tagTypesByArea = match ($area) {
             'lectura' => ['competencia', 'tipo_texto', 'nivel_lectura'],
-            'ingles' => ['parte'],
+            'ingles' => ['parte', 'competencia'],
             default => ['competencia', 'componente'],
         };
 
         $result = [];
 
         foreach ($tagTypesByArea as $tagType) {
-            $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, [$tagType]);
+            $tags = $this->findTagsFromQuestions($sessionIds->toArray(), $areaTag, [$tagType], $area);
 
             if ($tags->isEmpty()) {
                 $tags = TagHierarchy::where('tag_type', $tagType)
-                    ->where(function ($query) use ($areaTag) {
-                        $query->where('parent_area', $areaTag->tag_name)
-                            ->orWhereNull('parent_area');
-                    })
+                    ->where('parent_area', $areaTag->tag_name)
+                    ->whereNotNull('tag_name')
+                    ->where('tag_name', '!=', '')
                     ->get();
             }
 
@@ -902,7 +904,8 @@ class ZipgradeMetricsService
     private function getDimension2FromQuestion($question, ?string $area): ?string
     {
         if ($area === 'Inglés') {
-            return null;
+            $competencia = $question->tags->firstWhere('tag_type', 'competencia');
+            return $competencia?->tag_name;
         }
 
         if (in_array($area, ['Lectura', 'Lectura Crítica'])) {
@@ -941,7 +944,7 @@ class ZipgradeMetricsService
     private function getDimension2Name(?string $area): ?string
     {
         if ($area === 'Inglés') {
-            return null;
+            return 'Competencia';
         }
         return in_array($area, ['Lectura', 'Lectura Crítica']) ? 'Tipo de Texto' : 'Componente';
     }
@@ -975,8 +978,9 @@ class ZipgradeMetricsService
                 ->join('question_tags', 'exam_questions.id', '=', 'question_tags.exam_question_id')
                 ->whereIn('exam_questions.exam_session_id', $sessionIds)
                 ->where(function ($query) use ($areaTag, $area) {
+                    $areaValues = $this->resolveAreaFilterValues($area, $areaTag);
                     $query->where('question_tags.tag_hierarchy_id', $areaTag->id)
-                        ->orWhere('question_tags.inferred_area', $area);
+                        ->orWhereIn('question_tags.inferred_area', $areaValues);
                 })
                 ->distinct()
                 ->pluck('exam_questions.id');
@@ -999,5 +1003,24 @@ class ZipgradeMetricsService
         }
 
         return $summary;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function resolveAreaFilterValues(?string $areaKey, TagHierarchy $areaTag): array
+    {
+        $values = [];
+
+        if (is_string($areaKey) && $areaKey !== '') {
+            $values[] = $areaKey;
+            $values[] = AreaConfig::getLabel($areaKey);
+        }
+
+        if (is_string($areaTag->tag_name) && $areaTag->tag_name !== '') {
+            $values[] = $areaTag->tag_name;
+        }
+
+        return array_values(array_unique(array_filter($values, fn ($value): bool => $value !== '')));
     }
 }

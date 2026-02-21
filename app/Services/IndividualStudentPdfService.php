@@ -219,6 +219,7 @@ class IndividualStudentPdfService
                 'label' => 'Inglés',
                 'dimensions' => [
                     ['name' => 'Parte', 'field' => 'dimension1_value'],
+                    ['name' => 'Competencia', 'field' => 'dimension2_value'],
                 ],
             ],
         ];

@@ -13,6 +13,7 @@ use App\Models\StudentAnswer;
 use App\Models\TagHierarchy;
 use App\Models\TagNormalization;
 use App\Services\ZipgradeSessionImportService;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -91,6 +92,18 @@ class ZipgradeSessionImportServiceTest extends TestCase
         $this->assertSame(2, ExamQuestion::where('exam_session_id', $session->id)->count());
         $this->assertSame(2, StudentAnswer::count());
         $this->assertGreaterThanOrEqual(2, QuestionTag::count());
+
+        $question1 = ExamQuestion::where('exam_session_id', $session->id)
+            ->where('question_number', 1)
+            ->firstOrFail();
+        $question2 = ExamQuestion::where('exam_session_id', $session->id)
+            ->where('question_number', 2)
+            ->firstOrFail();
+
+        $this->assertSame('B', $question1->response_1);
+        $this->assertEquals(100.0, $question1->response_1_pct);
+        $this->assertSame('A', $question2->response_1);
+        $this->assertEquals(100.0, $question2->response_1_pct);
     }
 
     public function test_it_applies_manual_tag_classification_and_stores_normalizations(): void
@@ -159,6 +172,98 @@ class ZipgradeSessionImportServiceTest extends TestCase
         $normalization = TagNormalization::query()->where('tag_csv_name', 'Formulacion')->firstOrFail();
         $this->assertSame('competencia', $normalization->tag_type);
         $this->assertSame('Matemáticas', $normalization->parent_area);
+    }
+
+    public function test_reimporting_same_session_replaces_previous_questions_tags_and_answers(): void
+    {
+        $year = AcademicYear::create(['year' => 2026]);
+
+        $exam = Exam::create([
+            'academic_year_id' => $year->id,
+            'name' => 'Simulacro Reimportacion Limpia',
+            'type' => 'SIMULACRO',
+            'date' => '2026-02-20',
+            'sessions_count' => 1,
+        ]);
+
+        $student = Student::create([
+            'code' => 'STU-REIMPORT-1',
+            'document_id' => '9010',
+            'zipgrade_id' => 'ZG-9010',
+            'first_name' => 'Sofia',
+            'last_name' => 'Reimporta',
+        ]);
+
+        Enrollment::create([
+            'student_id' => $student->id,
+            'academic_year_id' => $year->id,
+            'grade' => 11,
+            'group' => '11-1',
+            'is_piar' => false,
+            'status' => 'ACTIVE',
+        ]);
+
+        $service = app(ZipgradeSessionImportService::class);
+
+        $firstBlueprint = implode("\n", [
+            'Key Letter,Question Number,Response/Mapping,Point Value,Tags',
+            ',1,B,1,Ingles,Lexical',
+            ',2,A,1,Ingles,PARTE 1',
+        ]);
+        $firstResponses = implode("\n", [
+            'QuizName,QuizClass,FirstName,LastName,StudentID,CustomID,Earned Points,Possible Points,PercentCorrect,QuizCreated,DataExported,Key Version,Stu1,PriKey1,Points1,Mark1,Stu2,PriKey2,Points2,Mark2',
+            'S1,1101,Sofia,Reimporta,ZG-9010,,2,2,100,2026-02-01,2026-02-20 12:00:00,,B,B,1,C,A,A,1,C',
+        ]);
+
+        $firstBlueprintPath = 'zipgrade_imports/test_reimport_first_blueprint.csv';
+        $firstResponsesPath = 'zipgrade_imports/test_reimport_first_responses.csv';
+        Storage::disk('local')->put($firstBlueprintPath, $firstBlueprint);
+        Storage::disk('local')->put($firstResponsesPath, $firstResponses);
+
+        $firstAnalysis = $service->analyzeSessionUpload($exam, 1, $firstBlueprintPath, $firstResponsesPath);
+        $service->importFromPreviewToken($exam, 1, $firstAnalysis['token']);
+
+        $secondBlueprint = implode("\n", [
+            'Key Letter,Question Number,Response/Mapping,Point Value,Tags',
+            ',1,C,1,Lectura Critica,Texto Continuo',
+        ]);
+        $secondResponses = implode("\n", [
+            'QuizName,QuizClass,FirstName,LastName,StudentID,CustomID,Earned Points,Possible Points,PercentCorrect,QuizCreated,DataExported,Key Version,Stu1,PriKey1,Points1,Mark1',
+            'S1,1101,Sofia,Reimporta,ZG-9010,,1,1,100,2026-02-01,2026-02-20 12:00:00,,C,C,1,C',
+        ]);
+
+        $secondBlueprintPath = 'zipgrade_imports/test_reimport_second_blueprint.csv';
+        $secondResponsesPath = 'zipgrade_imports/test_reimport_second_responses.csv';
+        Storage::disk('local')->put($secondBlueprintPath, $secondBlueprint);
+        Storage::disk('local')->put($secondResponsesPath, $secondResponses);
+
+        $secondAnalysis = $service->analyzeSessionUpload($exam, 1, $secondBlueprintPath, $secondResponsesPath);
+        $service->importFromPreviewToken($exam, 1, $secondAnalysis['token']);
+
+        $session = ExamSession::where('exam_id', $exam->id)
+            ->where('session_number', 1)
+            ->firstOrFail();
+
+        $sessionQuestionIds = ExamQuestion::query()
+            ->where('exam_session_id', $session->id)
+            ->pluck('id');
+
+        $this->assertSame(1, (int) $session->total_questions);
+        $this->assertSame(1, $sessionQuestionIds->count());
+        $this->assertSame(1, StudentAnswer::whereIn('exam_question_id', $sessionQuestionIds)->count());
+
+        $hasEnglishTagsInSession = QuestionTag::query()
+            ->join('tag_hierarchy', 'question_tags.tag_hierarchy_id', '=', 'tag_hierarchy.id')
+            ->whereIn('question_tags.exam_question_id', $sessionQuestionIds)
+            ->where(function ($query) {
+                $query->where('tag_hierarchy.tag_name', 'Ingles')
+                    ->orWhere('tag_hierarchy.tag_name', 'Inglés')
+                    ->orWhere('tag_hierarchy.parent_area', 'Inglés')
+                    ->orWhere('question_tags.inferred_area', 'ingles');
+            })
+            ->exists();
+
+        $this->assertFalse($hasEnglishTagsInSession);
     }
 
     public function test_it_suggests_area_and_dimension_types_for_realistic_tags(): void
@@ -465,10 +570,136 @@ class ZipgradeSessionImportServiceTest extends TestCase
         Storage::disk('local')->put($responsesPath, $responsesCsv);
 
         $service = app(ZipgradeSessionImportService::class);
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('Cada pregunta debe incluir explícitamente el tag de área');
+
+        $service->analyzeSessionUpload($exam, 1, $blueprintPath, $responsesPath);
+    }
+
+    public function test_it_accepts_lectura_with_single_dimension_tag_when_area_tag_exists(): void
+    {
+        $year = AcademicYear::create(['year' => 2026]);
+
+        $exam = Exam::create([
+            'academic_year_id' => $year->id,
+            'name' => 'Simulacro Lectura Dimension Unica',
+            'type' => 'SIMULACRO',
+            'date' => '2026-02-20',
+            'sessions_count' => 1,
+        ]);
+
+        $student = Student::create([
+            'code' => 'STU-NEW-8',
+            'document_id' => '9008',
+            'zipgrade_id' => 'ZG-9008',
+            'first_name' => 'Sofia',
+            'last_name' => 'Lectura',
+        ]);
+
+        Enrollment::create([
+            'student_id' => $student->id,
+            'academic_year_id' => $year->id,
+            'grade' => 11,
+            'group' => '11-1',
+            'is_piar' => false,
+            'status' => 'ACTIVE',
+        ]);
+
+        $blueprintCsv = implode("\n", [
+            'Key Letter,Question Number,Response/Mapping,Point Value,Tags',
+            ',1,B,1,Lectura Crítica,Informativo',
+            ',2,A,1,Lectura Crítica,Inferencial',
+        ]);
+
+        $responsesCsv = implode("\n", [
+            'QuizName,QuizClass,FirstName,LastName,StudentID,CustomID,Earned Points,Possible Points,PercentCorrect,QuizCreated,DataExported,Key Version,Stu1,PriKey1,Points1,Mark1,Stu2,PriKey2,Points2,Mark2',
+            'S1,1101,Sofia,Lectura,ZG-9008,,2,2,100,2026-02-01,2026-02-20 12:00:00,,B,B,1,C,A,A,1,C',
+        ]);
+
+        $blueprintPath = 'zipgrade_imports/test_blueprint_lectura_single_dimension.csv';
+        $responsesPath = 'zipgrade_imports/test_responses_lectura_single_dimension.csv';
+
+        Storage::disk('local')->put($blueprintPath, $blueprintCsv);
+        Storage::disk('local')->put($responsesPath, $responsesCsv);
+
+        $service = app(ZipgradeSessionImportService::class);
         $analysis = $service->analyzeSessionUpload($exam, 1, $blueprintPath, $responsesPath);
 
         $areaCounts = $analysis['summary']['area_question_counts'] ?? [];
+        $this->assertSame(2, $areaCounts['lectura'] ?? 0);
         $this->assertArrayNotHasKey('ingles', $areaCounts);
-        $this->assertArrayNotHasKey('lectura', $areaCounts);
+
+        $result = $service->importFromPreviewToken($exam, 1, $analysis['token']);
+        $this->assertSame(2, $result['questions_imported']);
+        $this->assertSame(2, $result['answers_imported']);
+    }
+
+    public function test_it_suggests_sociales_alias_as_component_when_coexisting_with_ciencias_sociales(): void
+    {
+        $year = AcademicYear::create(['year' => 2026]);
+
+        $exam = Exam::create([
+            'academic_year_id' => $year->id,
+            'name' => 'Simulacro Sociales Alias',
+            'type' => 'SIMULACRO',
+            'date' => '2026-02-20',
+            'sessions_count' => 1,
+        ]);
+
+        $student = Student::create([
+            'code' => 'STU-NEW-9',
+            'document_id' => '9009',
+            'zipgrade_id' => 'ZG-9009',
+            'first_name' => 'Paula',
+            'last_name' => 'Sociales',
+        ]);
+
+        Enrollment::create([
+            'student_id' => $student->id,
+            'academic_year_id' => $year->id,
+            'grade' => 11,
+            'group' => '11-1',
+            'is_piar' => false,
+            'status' => 'ACTIVE',
+        ]);
+
+        // Estado legacy: "Sociales" guardado como area.
+        TagNormalization::storeNormalization([
+            'tag_csv_name' => 'Sociales',
+            'tag_system_name' => 'Sociales',
+            'tag_type' => 'area',
+            'parent_area' => null,
+            'is_active' => true,
+        ]);
+
+        $blueprintCsv = implode("\n", [
+            'Key Letter,Question Number,Response/Mapping,Point Value,Tags',
+            ',1,B,1,Ciencias Sociales,Sociales,Pensamiento Social',
+        ]);
+
+        $responsesCsv = implode("\n", [
+            'QuizName,QuizClass,FirstName,LastName,StudentID,CustomID,Earned Points,Possible Points,PercentCorrect,QuizCreated,DataExported,Key Version,Stu1,PriKey1,Points1,Mark1',
+            'S1,1101,Paula,Sociales,ZG-9009,,1,1,100,2026-02-01,2026-02-20 12:00:00,,B,B,1,C',
+        ]);
+
+        $blueprintPath = 'zipgrade_imports/test_blueprint_sociales_alias.csv';
+        $responsesPath = 'zipgrade_imports/test_responses_sociales_alias.csv';
+
+        Storage::disk('local')->put($blueprintPath, $blueprintCsv);
+        Storage::disk('local')->put($responsesPath, $responsesCsv);
+
+        $service = app(ZipgradeSessionImportService::class);
+        $analysis = $service->analyzeSessionUpload($exam, 1, $blueprintPath, $responsesPath);
+
+        $suggestions = collect($analysis['summary']['tag_suggestions'] ?? [])->keyBy('tag');
+
+        $this->assertSame('sociales', $suggestions['Sociales']['suggested_area']);
+        $this->assertSame('componente', $suggestions['Sociales']['suggested_type']);
+
+        $service->importFromPreviewToken($exam, 1, $analysis['token']);
+
+        $socialesTag = TagHierarchy::query()->where('tag_name', 'Sociales')->firstOrFail();
+        $this->assertSame('componente', $socialesTag->tag_type);
+        $this->assertSame('Ciencias Sociales', $socialesTag->parent_area);
     }
 }

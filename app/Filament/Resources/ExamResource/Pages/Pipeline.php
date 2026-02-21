@@ -8,11 +8,14 @@ use App\Jobs\GenerateStudentReportsJob;
 use App\Jobs\SendStudentReportsEmailJob;
 use App\Models\Enrollment;
 use App\Models\Exam;
+use App\Models\ExamQuestion;
+use App\Models\ExamSession;
 use App\Models\ReportGeneration;
 use App\Services\ZipgradeMetricsService;
 use App\Services\ZipgradePipelineStatusService;
 use App\Services\ZipgradePdfService;
 use App\Services\ZipgradeReportGenerator;
+use App\Support\AreaConfig;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
@@ -57,6 +60,102 @@ class Pipeline extends Page
     {
         return app(ZipgradePipelineStatusService::class)
             ->getPipelineStatus($this->record);
+    }
+
+    /**
+     * @return array<int,array{
+     *   area:string,
+     *   total:int,
+     *   dim1_name:string,
+     *   dim1_with:int,
+     *   dim1_missing:int,
+     *   dim2_name:?string,
+     *   dim2_with:?int,
+     *   dim2_missing:?int,
+     *   dim3_name:?string,
+     *   dim3_with:?int,
+     *   dim3_missing:?int
+     * }>
+     */
+    public function getDimensionCoverageSummary(): array
+    {
+        $sessionIds = ExamSession::query()
+            ->where('exam_id', $this->record->id)
+            ->pluck('id');
+
+        if ($sessionIds->isEmpty()) {
+            return [];
+        }
+
+        $questions = ExamQuestion::query()
+            ->whereIn('exam_session_id', $sessionIds)
+            ->with('tags')
+            ->get();
+
+        $summary = [];
+
+        foreach ($questions as $question) {
+            $areaKey = $this->resolveAreaKeyFromQuestion($question);
+            if ($areaKey === null) {
+                continue;
+            }
+
+            if (! isset($summary[$areaKey])) {
+                $summary[$areaKey] = [
+                    'area' => AreaConfig::getLabel($areaKey),
+                    'total' => 0,
+                    'dim1_name' => $areaKey === 'ingles' ? 'Parte' : 'Competencia',
+                    'dim1_with' => 0,
+                    'dim2_name' => $areaKey === 'ingles' ? 'Competencia' : ($areaKey === 'lectura' ? 'Tipo de Texto' : 'Componente'),
+                    'dim2_with' => 0,
+                    'dim3_name' => $areaKey === 'lectura' ? 'Nivel de Lectura' : null,
+                    'dim3_with' => $areaKey === 'lectura' ? 0 : null,
+                ];
+            }
+
+            $summary[$areaKey]['total']++;
+
+            $hasCompetencia = $question->tags->contains(fn ($tag): bool => $tag->tag_type === 'competencia');
+            $hasParte = $question->tags->contains(fn ($tag): bool => $tag->tag_type === 'parte');
+            $hasComponente = $question->tags->contains(fn ($tag): bool => $tag->tag_type === 'componente');
+            $hasTipoTexto = $question->tags->contains(fn ($tag): bool => $tag->tag_type === 'tipo_texto');
+            $hasNivelLectura = $question->tags->contains(fn ($tag): bool => $tag->tag_type === 'nivel_lectura');
+
+            if ($areaKey === 'ingles') {
+                if ($hasParte) {
+                    $summary[$areaKey]['dim1_with']++;
+                }
+                if ($hasCompetencia) {
+                    $summary[$areaKey]['dim2_with']++;
+                }
+                continue;
+            }
+
+            if ($hasCompetencia) {
+                $summary[$areaKey]['dim1_with']++;
+            }
+
+            if ($areaKey === 'lectura') {
+                if ($hasTipoTexto) {
+                    $summary[$areaKey]['dim2_with']++;
+                }
+                if ($hasNivelLectura) {
+                    $summary[$areaKey]['dim3_with']++;
+                }
+            } else {
+                if ($hasComponente) {
+                    $summary[$areaKey]['dim2_with']++;
+                }
+            }
+        }
+
+        foreach ($summary as $areaKey => $data) {
+            $summary[$areaKey]['dim1_missing'] = max(0, $data['total'] - $data['dim1_with']);
+            $summary[$areaKey]['dim2_missing'] = $data['dim2_with'] === null ? null : max(0, $data['total'] - $data['dim2_with']);
+            $summary[$areaKey]['dim3_missing'] = $data['dim3_with'] === null ? null : max(0, $data['total'] - $data['dim3_with']);
+        }
+
+        return array_values($summary);
     }
 
     /**
@@ -132,47 +231,77 @@ class Pipeline extends Page
         ];
     }
 
+    public function downloadExcel()
+    {
+        $pipeline = $this->getPipelineStatus();
+        if (! $pipeline['ready']) {
+            Notification::make()
+                ->title('Pipeline incompleto')
+                ->body('Completa la carga de todas las sesiones antes de descargar reportes.')
+                ->warning()
+                ->send();
+
+            return null;
+        }
+
+        $export = new ZipgradeResultsExport($this->record, null, null);
+        $filename = 'resultados_zipgrade_'.str_replace(' ', '_', strtolower($this->record->name)).'_'.now()->format('Y-m-d').'.xlsx';
+
+        return Excel::download($export, $filename);
+    }
+
+    public function downloadPdf()
+    {
+        $pipeline = $this->getPipelineStatus();
+        if (! $pipeline['ready']) {
+            Notification::make()
+                ->title('Pipeline incompleto')
+                ->body('Completa la carga de todas las sesiones antes de descargar reportes.')
+                ->warning()
+                ->send();
+
+            return null;
+        }
+
+        $pdfService = app(ZipgradePdfService::class);
+        $filename = $pdfService->getFilename($this->record);
+
+        return response()->streamDownload(function () use ($pdfService) {
+            echo $pdfService->generate($this->record, null, null);
+        }, $filename, [
+            'Content-Type' => 'application/pdf',
+        ]);
+    }
+
+    public function downloadHtml()
+    {
+        $pipeline = $this->getPipelineStatus();
+        if (! $pipeline['ready']) {
+            Notification::make()
+                ->title('Pipeline incompleto')
+                ->body('Completa la carga de todas las sesiones antes de descargar reportes.')
+                ->warning()
+                ->send();
+
+            return null;
+        }
+
+        $generator = app(ZipgradeReportGenerator::class);
+        $filename = $generator->getReportFilename($this->record, null);
+
+        return response()->streamDownload(function () use ($generator) {
+            echo $generator->generateHtmlReport($this->record, null);
+        }, $filename, [
+            'Content-Type' => 'text/html; charset=utf-8',
+        ]);
+    }
+
     /**
      * @return array<Action>
      */
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('download_excel')
-                ->hidden()
-                ->action(function () {
-                    $export = new ZipgradeResultsExport($this->record, null, null);
-                    $filename = 'resultados_zipgrade_'.str_replace(' ', '_', strtolower($this->record->name)).'_'.now()->format('Y-m-d').'.xlsx';
-
-                    return Excel::download($export, $filename);
-                }),
-
-            Action::make('download_pdf')
-                ->hidden()
-                ->action(function () {
-                    $pdfService = app(ZipgradePdfService::class);
-                    $filename = $pdfService->getFilename($this->record);
-
-                    return response()->streamDownload(function () use ($pdfService) {
-                        echo $pdfService->generate($this->record, null, null);
-                    }, $filename, [
-                        'Content-Type' => 'application/pdf',
-                    ]);
-                }),
-
-            Action::make('download_html')
-                ->hidden()
-                ->action(function () {
-                    $generator = app(ZipgradeReportGenerator::class);
-                    $filename = $generator->getReportFilename($this->record, null);
-
-                    return response()->streamDownload(function () use ($generator) {
-                        echo $generator->generateHtmlReport($this->record, null);
-                    }, $filename, [
-                        'Content-Type' => 'text/html; charset=utf-8',
-                    ]);
-                }),
-
             Action::make('generate_individual_reports')
                 ->hidden()
                 ->requiresConfirmation()
@@ -291,6 +420,31 @@ class Pipeline extends Page
                 ->color('gray')
                 ->url(fn (): string => ExamResource::getUrl('index')),
         ];
+    }
+
+    private function resolveAreaKeyFromQuestion(ExamQuestion $question): ?string
+    {
+        foreach ($question->tags as $tag) {
+            if ($tag->tag_type === 'area') {
+                $normalized = AreaConfig::normalizeAreaName((string) $tag->tag_name);
+                if ($normalized !== null) {
+                    return $normalized;
+                }
+            }
+        }
+
+        foreach ($question->tags as $tag) {
+            if (! $tag->parent_area) {
+                continue;
+            }
+
+            $normalized = AreaConfig::normalizeAreaName((string) $tag->parent_area);
+            if ($normalized !== null) {
+                return $normalized;
+            }
+        }
+
+        return null;
     }
 
     private function getEnrollmentsForExamQuery()

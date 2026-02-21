@@ -82,6 +82,8 @@ class ExamPipelineUploadController extends Controller
                 ->send();
 
             return redirect()->to(ExamResource::getUrl('pipeline', ['record' => $exam]));
+        } catch (ValidationException $exception) {
+            throw $exception;
         } catch (\Throwable $exception) {
             report($exception);
 
@@ -172,6 +174,23 @@ class ExamPipelineUploadController extends Controller
             if (! isset($resolved[$tagName])) {
                 $resolved[$tagName] = $classification;
             }
+        }
+
+        $unclassifiedTags = collect($resolved)
+            ->filter(fn (array $classification): bool => ($classification['area'] ?? '__unclassified') === '__unclassified')
+            ->keys()
+            ->values()
+            ->all();
+
+        if ($unclassifiedTags !== []) {
+            $listedTags = implode(', ', array_slice($unclassifiedTags, 0, 12));
+            if (count($unclassifiedTags) > 12) {
+                $listedTags .= ', ...';
+            }
+
+            throw ValidationException::withMessages([
+                'classification_json' => "Todos los tags deben quedar asociados a un área antes de importar. Revisa: {$listedTags}",
+            ]);
         }
 
         return $resolved;

@@ -59,9 +59,7 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
 
         // Obtener datos CON PIAR y SIN PIAR
         $dim1PiarData = $this->metricsService->getDimensionPiarComparison($this->exam, $this->areaKey, 1);
-        $dim2PiarData = $this->areaKey !== 'ingles'
-            ? $this->metricsService->getDimensionPiarComparison($this->exam, $this->areaKey, 2)
-            : [];
+        $dim2PiarData = $this->metricsService->getDimensionPiarComparison($this->exam, $this->areaKey, 2);
         $dim3PiarData = $this->areaKey === 'lectura'
             ? $this->metricsService->getDimensionPiarComparison($this->exam, $this->areaKey, 3)
             : [];
@@ -79,40 +77,52 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
 
         // CON PIAR (todos)
         $rows->push(array_merge(['CON PIAR'], array_fill(0, $numGroups + 1, '')));
-        foreach ($dim1PiarData as $itemName => $piarData) {
-            $row = [$itemName, round($piarData['con_piar']['promedio'], 1)];
-            foreach ($groupArray as $groupLabel) {
-                $row[] = round($piarData['con_piar'][$groupLabel] ?? 0, 1);
+        if (empty($dim1PiarData)) {
+            $rows->push(array_merge(["Sin tags clasificados como {$this->getDim1Label()}"], array_fill(0, $numGroups + 1, 0)));
+        } else {
+            foreach ($dim1PiarData as $itemName => $piarData) {
+                $row = [$itemName, round($piarData['con_piar']['promedio'], 1)];
+                foreach ($groupArray as $groupLabel) {
+                    $row[] = round($piarData['con_piar'][$groupLabel] ?? 0, 1);
+                }
+                $rows->push($row);
             }
-            $rows->push($row);
         }
 
         // SIN PIAR (solo no-PIAR) - FOCO
         $rows->push(array_merge(['SIN PIAR'], array_fill(0, $numGroups + 1, '')));
-        foreach ($dim1PiarData as $itemName => $piarData) {
-            $row = [$itemName, round($piarData['sin_piar']['promedio'], 1)];
-            foreach ($groupArray as $groupLabel) {
-                $row[] = round($piarData['sin_piar'][$groupLabel] ?? 0, 1);
+        if (empty($dim1PiarData)) {
+            $rows->push(array_merge(["Sin tags clasificados como {$this->getDim1Label()}"], array_fill(0, $numGroups + 1, 0)));
+        } else {
+            foreach ($dim1PiarData as $itemName => $piarData) {
+                $row = [$itemName, round($piarData['sin_piar']['promedio'], 1)];
+                foreach ($groupArray as $groupLabel) {
+                    $row[] = round($piarData['sin_piar'][$groupLabel] ?? 0, 1);
+                }
+                $rows->push($row);
             }
-            $rows->push($row);
         }
         
         // DIFERENCIA (SP - CP)
         $rows->push(array_merge(['DIFERENCIA (SP-CP)'], array_fill(0, $numGroups + 1, '')));
-        foreach ($dim1PiarData as $itemName => $piarData) {
-            $spProm = $piarData['sin_piar']['promedio'];
-            $cpProm = $piarData['con_piar']['promedio'];
-            $row = [$itemName, round($spProm - $cpProm, 1)];
-            foreach ($groupArray as $groupLabel) {
-                $spVal = $piarData['sin_piar'][$groupLabel] ?? 0;
-                $cpVal = $piarData['con_piar'][$groupLabel] ?? 0;
-                $row[] = round($spVal - $cpVal, 1);
+        if (empty($dim1PiarData)) {
+            $rows->push(array_merge(["Sin tags clasificados como {$this->getDim1Label()}"], array_fill(0, $numGroups + 1, 0)));
+        } else {
+            foreach ($dim1PiarData as $itemName => $piarData) {
+                $spProm = $piarData['sin_piar']['promedio'];
+                $cpProm = $piarData['con_piar']['promedio'];
+                $row = [$itemName, round($spProm - $cpProm, 1)];
+                foreach ($groupArray as $groupLabel) {
+                    $spVal = $piarData['sin_piar'][$groupLabel] ?? 0;
+                    $cpVal = $piarData['con_piar'][$groupLabel] ?? 0;
+                    $row[] = round($spVal - $cpVal, 1);
+                }
+                $rows->push($row);
             }
-            $rows->push($row);
         }
 
         // DIMENSIÓN 2: Tablas CON PIAR, SIN PIAR, y DIFERENCIA
-        if ($this->areaKey !== 'ingles' && ! empty($dim2PiarData)) {
+        if (! empty($dim2PiarData)) {
             $rows->push(array_merge([''], array_fill(0, $numGroups + 1, '')));
             $rows->push(['DIMENSIÓN 2'] + array_fill(0, $numGroups + 1, ''));
             $header2 = array_merge([$this->getDim2Label(), 'Promedio'], $groupArray);
@@ -209,6 +219,7 @@ class AreaAnalysisSheet implements FromCollection, ShouldAutoSize, WithColumnFor
     private function getDim2Label(): string
     {
         return match ($this->areaKey) {
+            'ingles' => 'Competencia',
             'lectura' => 'Tipo de Texto',
             default => 'Componente',
         };

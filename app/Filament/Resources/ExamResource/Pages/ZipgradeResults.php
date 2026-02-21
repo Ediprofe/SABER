@@ -9,6 +9,7 @@ use App\Models\Exam;
 use App\Services\ZipgradeMetricsService;
 use App\Services\ZipgradePdfService;
 use App\Services\ZipgradeReportGenerator;
+use App\Services\IndividualStudentPdfService;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\Page;
 use Filament\Tables\Columns\BadgeColumn;
@@ -144,6 +145,35 @@ class ZipgradeResults extends Page implements HasTable
             ->emptyStateHeading('No hay estudiantes con resultados')
             ->emptyStateDescription('Importe datos de Zipgrade para ver los resultados.')
             ->actions([
+                \Filament\Tables\Actions\Action::make('download_pdf_single')
+                    ->label('Descargar PDF')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('primary')
+                    ->size('sm')
+                    ->action(function (Enrollment $record) {
+                        $hasAnswers = $record->studentAnswers()
+                            ->whereHas('question.session', fn ($query) => $query->where('exam_id', $this->record->id))
+                            ->exists();
+
+                        if (! $hasAnswers) {
+                            Notification::make()
+                                ->title('Sin resultados')
+                                ->body('Este estudiante no tiene respuestas para este examen.')
+                                ->warning()
+                                ->send();
+                            return;
+                        }
+
+                        $pdfService = app(IndividualStudentPdfService::class);
+                        $filename = $pdfService->getFileName($record);
+
+                        return response()->streamDownload(function () use ($pdfService, $record) {
+                            echo $pdfService->generatePdf($record, $this->record);
+                        }, $filename, [
+                            'Content-Type' => 'application/pdf',
+                        ]);
+                    }),
+
                 \Filament\Tables\Actions\Action::make('send_email_single')
                     ->label('Enviar Email')
                     ->icon('heroicon-o-envelope')

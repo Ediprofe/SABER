@@ -636,6 +636,7 @@ class ZipgradeReportGenerator
                 'correcta' => $question->correct_answer ?? '—',
                 'area' => $area ?? '—',
                 'pct_acierto' => $pctCorrect,
+                // Estas columnas se calculan durante la importacion desde selected_answer del CSV de respuestas.
                 'respuesta_1' => $question->response_1 ?? '—',
                 'pct_1' => $question->response_1_pct ?? 0,
                 'respuesta_2' => $question->response_2 ?? '—',
@@ -689,7 +690,8 @@ class ZipgradeReportGenerator
     private function getDimension2FromQuestion($question, ?string $area): ?string
     {
         if ($area === 'Inglés') {
-            return null;
+            $competencia = $question->tags->firstWhere('tag_type', 'competencia');
+            return $competencia?->tag_name;
         }
 
         if (in_array($area, ['Lectura', 'Lectura Crítica'])) {

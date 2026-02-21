@@ -70,6 +70,7 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
                 'dim3' => $dimension3 ?? '—',
                 'pct_acierto' => $pctCorrect,
                 'dificultad' => $dificultad,
+                // Top opciones por pregunta precomputadas en importacion desde selected_answer del CSV.
                 'respuesta_1' => $question->response_1 ?? '—',
                 'pct_1' => $question->response_1_pct ?? 0,
                 'respuesta_2' => $question->response_2 ?? '—',
@@ -106,7 +107,7 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
 
     private function getDimension1FromQuestion($question, ?string $area): ?string
     {
-        // Para Inglés: buscar tags de tipo 'parte'
+        // Para Inglés: Dimensión 1 = Parte.
         if ($area === 'Inglés') {
             $parte = $question->tags->firstWhere('tag_type', 'parte');
 
@@ -121,9 +122,11 @@ class QuestionAnalysisSheet implements FromCollection, ShouldAutoSize, WithColum
 
     private function getDimension2FromQuestion($question, ?string $area): ?string
     {
-        // Para Inglés: no hay dimensión 2
+        // Para Inglés: Dimensión 2 = Competencia.
         if ($area === 'Inglés') {
-            return null;
+            $competencia = $question->tags->firstWhere('tag_type', 'competencia');
+
+            return $competencia?->tag_name;
         }
 
         // Para Lectura: buscar tipo_texto

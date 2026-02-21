@@ -13,6 +13,7 @@ use App\Models\TagNormalization;
 use App\Models\ZipgradeImport;
 use App\Support\AreaConfig;
 use App\Support\TagClassificationConfig;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -32,6 +33,7 @@ class ZipgradeSessionImportService
 
         $blueprint = $this->parseBlueprint($blueprintPath);
         $responses = $this->parseResponses($responsesPath, false);
+        $this->ensureEachQuestionHasExplicitAreaTag($blueprint);
 
         $enrollmentMap = $this->loadEnrollmentMap($exam);
 
@@ -147,6 +149,7 @@ class ZipgradeSessionImportService
 
         $blueprint = $this->parseBlueprint($blueprintPath);
         $responses = $this->parseResponses($responsesPath, true);
+        $this->ensureEachQuestionHasExplicitAreaTag($blueprint);
 
         $result = DB::transaction(function () use ($exam, $sessionNumber, $blueprint, $responses, $tagClassifications, $saveNormalizations) {
             $session = ExamSession::firstOrCreate(
@@ -162,6 +165,9 @@ class ZipgradeSessionImportService
             ]);
 
             try {
+                // Reimportacion completa por sesion: evita mezclar tags/respuestas de cargas anteriores.
+                $this->clearSessionData($session);
+
                 $questionNumbers = $this->collectQuestionNumbers($blueprint, $responses);
                 $fallbackAnswers = $this->fallbackCorrectAnswersFromResponses($responses);
 
@@ -230,6 +236,7 @@ class ZipgradeSessionImportService
                 $enrollmentMap = $this->loadEnrollmentMap($exam);
 
                 $answerRows = [];
+                $responseCounters = [];
                 $studentsMatched = 0;
                 $studentsUnmatched = 0;
 
@@ -257,6 +264,11 @@ class ZipgradeSessionImportService
                             'created_at' => now(),
                             'updated_at' => now(),
                         ];
+
+                        $selectedAnswer = strtoupper((string) ($answerData['selected_answer'] ?? ''));
+                        if (preg_match('/^[A-Z]$/', $selectedAnswer) === 1) {
+                            $responseCounters[$question->id][$selectedAnswer] = ($responseCounters[$question->id][$selectedAnswer] ?? 0) + 1;
+                        }
                     }
                 }
 
@@ -267,6 +279,8 @@ class ZipgradeSessionImportService
                         ['is_correct', 'updated_at']
                     );
                 }
+
+                $this->applyQuestionResponseStats($questionsByNumber, $responseCounters);
 
                 $session->total_questions = count($questionNumbers);
                 $session->zipgrade_quiz_name = $responses['quiz_name'] ?: $session->zipgrade_quiz_name;
@@ -378,7 +392,7 @@ class ZipgradeSessionImportService
     }
 
     /**
-     * @return array{students:array<int,array{zipgrade_id:string,answers:array<int,array{is_correct:bool}>}>,question_numbers:array<int,int>,quiz_name:string}
+     * @return array{students:array<int,array{zipgrade_id:string,answers:array<int,array{is_correct:bool,selected_answer:?string}>}>,question_numbers:array<int,int>,quiz_name:string}
      */
     private function parseResponses(string $filePath, bool $withAnswers): array
     {
@@ -469,6 +483,7 @@ class ZipgradeSessionImportService
 
                     $studentPayload['answers'][$questionNumber] = [
                         'is_correct' => $this->resolveCorrectness($mark, $points, $selected, $primary),
+                        'selected_answer' => preg_match('/^[A-Z]$/', $selected) === 1 ? $selected : null,
                     ];
                 }
             }
@@ -562,7 +577,7 @@ class ZipgradeSessionImportService
                 foreach ($aliases as $alias) {
                     $normalizedAlias = $this->normalizedText($alias);
 
-                    if ($normalizedAlias === $normalizedTag || str_contains($normalizedTag, $normalizedAlias)) {
+                    if ($normalizedAlias === $normalizedTag) {
                         return $areaKey;
                     }
                 }
@@ -570,6 +585,43 @@ class ZipgradeSessionImportService
         }
 
         return null;
+    }
+
+    /**
+     * @param  array{questions:array<int,array{question_number:int,correct_answer:?string,tags:array<int,string>,inferred_area:?string}>}  $blueprint
+     */
+    private function ensureEachQuestionHasExplicitAreaTag(array $blueprint): void
+    {
+        $missingAreaQuestions = [];
+
+        foreach ($blueprint['questions'] as $questionNumber => $questionData) {
+            $hasAreaTag = false;
+            foreach ($questionData['tags'] as $tagName) {
+                if (AreaConfig::normalizeAreaName($tagName) !== null) {
+                    $hasAreaTag = true;
+                    break;
+                }
+            }
+
+            if (! $hasAreaTag) {
+                $missingAreaQuestions[] = (int) $questionNumber;
+            }
+        }
+
+        if ($missingAreaQuestions !== []) {
+            sort($missingAreaQuestions);
+            $preview = implode(', ', array_slice($missingAreaQuestions, 0, 15));
+            if (count($missingAreaQuestions) > 15) {
+                $preview .= ', ...';
+            }
+
+            throw ValidationException::withMessages([
+                'blueprint' => [
+                    'Cada pregunta debe incluir explícitamente el tag de área (Lectura, Matemáticas, Sociales, Naturales o Inglés). '
+                    .'Preguntas sin tag de área: '.$preview,
+                ],
+            ]);
+        }
     }
 
     private function normalizedText(string $value): string
@@ -641,6 +693,7 @@ class ZipgradeSessionImportService
     private function buildTagSuggestions(array $blueprint): array
     {
         $areaHints = $this->buildTagAreaHints($blueprint);
+        $tagUsage = $this->buildTagUsageContext($blueprint);
         $suggestions = [];
 
         foreach ($blueprint['tags'] as $tagName) {
@@ -656,6 +709,15 @@ class ZipgradeSessionImportService
                 $type = TagClassificationConfig::isValidTypeForArea($areaKey, $heuristicType)
                     ? $heuristicType
                     : TagClassificationConfig::defaultTypeForArea($areaKey);
+            }
+
+            // "Sociales" puede venir como alias dimensional dentro de Ciencias Sociales.
+            // Si coexiste con otro tag explícito de área, no se fuerza como tag de área.
+            if ($this->isSocialesAliasTag($tagName)) {
+                $usage = $tagUsage[$tagName] ?? ['with_other_area_tags' => 0, 'as_only_area_tag' => 0];
+                if (($usage['with_other_area_tags'] ?? 0) > 0 && $type === 'area') {
+                    $type = TagClassificationConfig::defaultTypeForArea($areaKey);
+                }
             }
 
             $suggestions[] = [
@@ -707,6 +769,48 @@ class ZipgradeSessionImportService
         }
 
         return $hints;
+    }
+
+    /**
+     * @param  array{questions:array<int,array{question_number:int,correct_answer:?string,tags:array<int,string>,inferred_area:?string}>}  $blueprint
+     * @return array<string,array{with_other_area_tags:int,as_only_area_tag:int}>
+     */
+    private function buildTagUsageContext(array $blueprint): array
+    {
+        $context = [];
+
+        foreach ($blueprint['questions'] as $questionData) {
+            $tags = $questionData['tags'] ?? [];
+            $areaTags = [];
+
+            foreach ($tags as $tagName) {
+                if (AreaConfig::normalizeAreaName($tagName) !== null) {
+                    $areaTags[] = $tagName;
+                }
+            }
+
+            $areaCount = count($areaTags);
+            if ($areaCount === 0) {
+                continue;
+            }
+
+            foreach ($areaTags as $tagName) {
+                if (! isset($context[$tagName])) {
+                    $context[$tagName] = [
+                        'with_other_area_tags' => 0,
+                        'as_only_area_tag' => 0,
+                    ];
+                }
+
+                if ($areaCount > 1) {
+                    $context[$tagName]['with_other_area_tags']++;
+                } else {
+                    $context[$tagName]['as_only_area_tag']++;
+                }
+            }
+        }
+
+        return $context;
     }
 
     /**
@@ -811,7 +915,7 @@ class ZipgradeSessionImportService
             $type = TagClassificationConfig::defaultTypeForArea($areaKey);
         }
 
-        if ($this->isAreaTagName($tagName)) {
+        if ($this->isStrictAreaTagName($tagName)) {
             $type = 'area';
             if ($areaKey === '__unclassified') {
                 $areaKey = TagClassificationConfig::normalizeAreaKey($this->inferAreaFromTags([$tagName]));
@@ -920,6 +1024,10 @@ class ZipgradeSessionImportService
             return true;
         }
 
+        if ($storedType === 'area' && ! $this->isStrictAreaTagName($tagName)) {
+            return TagClassificationConfig::isValidTypeForArea($areaKey, $heuristicType);
+        }
+
         // En ingles, tags como Lexical/Comunicativa/Pragmatica/Gramatical deben ir a Competencia.
         if ($areaKey === 'ingles' && $storedType === 'parte' && $heuristicType === 'competencia') {
             return ! $this->hasAnyKeyword($this->normalizedText($tagName), ['parte']);
@@ -943,7 +1051,7 @@ class ZipgradeSessionImportService
 
     private function suggestTagType(string $tagName, ?string $areaKey): string
     {
-        if ($this->isAreaTagName($tagName)) {
+        if ($this->isStrictAreaTagName($tagName)) {
             return 'area';
         }
 
@@ -994,31 +1102,41 @@ class ZipgradeSessionImportService
         return $this->isCompetencyTag($normalizedTag) ? 'competencia' : 'componente';
     }
 
-    private function isAreaTagName(string $tagName): bool
+    private function isStrictAreaTagName(string $tagName): bool
     {
         $normalizedTag = $this->normalizedText($tagName);
-        $areaNames = [
-            'lectura',
-            'lectura critica',
-            'lectura crítica',
-            'matematicas',
-            'matemáticas',
-            'ciencias sociales',
-            'sociales',
-            'ciencias naturales',
-            'naturales',
-            'ingles',
-            'inglés',
-            'english',
-        ];
+        return in_array($normalizedTag, [
+            $this->normalizedText('Lectura'),
+            $this->normalizedText('Lectura Critica'),
+            $this->normalizedText('Lectura Crítica'),
+            $this->normalizedText('Matematicas'),
+            $this->normalizedText('Matemáticas'),
+            $this->normalizedText('Ciencias Sociales'),
+            $this->normalizedText('Ciencias Naturales'),
+            $this->normalizedText('Ingles'),
+            $this->normalizedText('Inglés'),
+            $this->normalizedText('English'),
+        ], true);
+    }
 
-        foreach ($areaNames as $areaName) {
-            if ($normalizedTag === $this->normalizedText($areaName)) {
-                return true;
-            }
+    private function isAreaTagName(string $tagName): bool
+    {
+        if ($this->isStrictAreaTagName($tagName)) {
+            return true;
         }
 
-        return false;
+        $normalizedTag = $this->normalizedText($tagName);
+
+        // Alias cortos: útiles para inferencia/validación, pero no se fuerzan como "area".
+        return in_array($normalizedTag, [
+            $this->normalizedText('Sociales'),
+            $this->normalizedText('Naturales'),
+        ], true);
+    }
+
+    private function isSocialesAliasTag(string $tagName): bool
+    {
+        return $this->normalizedText($tagName) === $this->normalizedText('Sociales');
     }
 
     private function isCompetencyTag(string $normalizedTag): bool
@@ -1119,6 +1237,91 @@ class ZipgradeSessionImportService
                 'is_active' => true,
             ]);
         }
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int,\App\Models\ExamQuestion>  $questionsByNumber
+     * @param  array<int,array<string,int>>  $responseCounters
+     */
+    private function applyQuestionResponseStats($questionsByNumber, array $responseCounters): void
+    {
+        foreach ($questionsByNumber as $question) {
+            $stats = $this->buildQuestionResponseStats($responseCounters[$question->id] ?? []);
+            ExamQuestion::query()
+                ->whereKey($question->id)
+                ->update(array_merge($stats, ['updated_at' => now()]));
+        }
+    }
+
+    private function clearSessionData(ExamSession $session): void
+    {
+        $questionIds = ExamQuestion::query()
+            ->where('exam_session_id', $session->id)
+            ->pluck('id');
+
+        if ($questionIds->isNotEmpty()) {
+            StudentAnswer::query()->whereIn('exam_question_id', $questionIds)->delete();
+            QuestionTag::query()->whereIn('exam_question_id', $questionIds)->delete();
+        }
+
+        ExamQuestion::query()
+            ->where('exam_session_id', $session->id)
+            ->delete();
+    }
+
+    /**
+     * @param  array<string,int>  $countsByOption
+     * @return array{
+     *   response_1:?string,response_1_pct:float,
+     *   response_2:?string,response_2_pct:float,
+     *   response_3:?string,response_3_pct:float,
+     *   response_4:?string,response_4_pct:float
+     * }
+     */
+    private function buildQuestionResponseStats(array $countsByOption): array
+    {
+        $clean = [];
+        foreach ($countsByOption as $option => $count) {
+            $normalizedOption = strtoupper((string) $option);
+            if (preg_match('/^[A-Z]$/', $normalizedOption) !== 1) {
+                continue;
+            }
+
+            $clean[$normalizedOption] = (int) $count;
+        }
+
+        if ($clean !== []) {
+            uksort($clean, function (string $left, string $right) use ($clean): int {
+                if ($clean[$left] !== $clean[$right]) {
+                    return $clean[$right] <=> $clean[$left];
+                }
+
+                return strcmp($left, $right);
+            });
+        }
+
+        $total = array_sum($clean);
+        $entries = array_slice($clean, 0, 4, true);
+
+        $result = [
+            'response_1' => null,
+            'response_1_pct' => 0.0,
+            'response_2' => null,
+            'response_2_pct' => 0.0,
+            'response_3' => null,
+            'response_3_pct' => 0.0,
+            'response_4' => null,
+            'response_4_pct' => 0.0,
+        ];
+
+        $index = 1;
+        foreach ($entries as $option => $count) {
+            $result["response_{$index}"] = $option;
+            $result["response_{$index}_pct"] = $total > 0 ? round(($count / $total) * 100, 2) : 0.0;
+            $index++;
+        }
+
+        return $result;
     }
 
     private function resolveCorrectness(string $mark, string $pointsRaw, string $selected, string $primary): bool
